@@ -4,13 +4,14 @@ from rclpy.node import Node
 from cv_bridge import CvBridge
 
 from sensor_msgs.msg import Image
+from geometry_msgs.msg import Pose
 from .detector import Detector
 
 class DetectorNode(Node):
     def __init__(self):
         super().__init__("detector")
         self.detector = Detector()
-        self.publisher = None #TODO
+        self.publisher = self.create_publisher(Pose, "/detections", 1)
         self.subscriber = self.create_subscription(Image, "/zed/zed_node/rgb/image_rect_color", self.callback, 1)
         self.bridge = CvBridge()
 
