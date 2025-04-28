@@ -50,11 +50,6 @@ class StateMachine(Node):
             Pose, "/pf/pose", self.location_callback, 1
         )
 
-        # publishers
-        self.path_request_publisher = self.create_publisher(
-            PoseArray, "/path_request", 1
-        )
-
         # state vars
         self.points_of_interest = []  # tuples of (point, phase)
         self.points_of_interest_ptr = 0
@@ -66,9 +61,6 @@ class StateMachine(Node):
 
         # constants
         self.goal_threshold = 0.5
-        self.detection_wait_time = 5.0  # seconds to wait in front of correct object
-        self.signal_stop_distance = 0.75  # meters to stop in front of signal
-        self.human_avoidance_distance = 1.5  # meters to start avoidance
 
         # Create timer for periodic state checking
         self.timer = self.create_timer(0.1, self.state_update)
@@ -82,7 +74,7 @@ class StateMachine(Node):
             Phase.IDLE: lambda: None,
         }
 
-        self.controller = Controller()
+        self.controller = Controller(self)
 
     def shell_points_callback(self, shell_points: PoseArray):
         """
@@ -169,8 +161,10 @@ class StateMachine(Node):
                 break
 
         if correct_banana is not None:
-            self.controller.collect_banana()  # will take some time
-            self.next_goal()
+            self.controller.collect_banana(
+                correct_banana.location
+            )  # will take some time
+            self.follow_path_phase()
 
     def signal_detection_phase(self):
         """Process signal detection during SIGNAL_DETECTION phase."""
@@ -178,40 +172,29 @@ class StateMachine(Node):
             self.controller.await_signal()  # will just send a full zero control at a higher mux
             # TODO: decide how to handle tight loop, maybe sleep, maybe follow vesc command freq
 
-        self.next_goal()
+        self.follow_path_phase()
 
     def human_obstacle_phase(self):
         """Handle human obstacle avoidance logic."""
         self.controller.avoid_human()  # will go past the human and return once done
         # TODO: might need a sleep here if we are waiting for lower level controller to
         # complete the human avoidance path follow
-        self.next_goal()
+        self.follow_path_phase()
 
-    def next_goal(self):
-        """Transition to the next phase."""
+    def follow_path_phase(self):
+        """Follow a path to a goal point."""
         self.points_of_interest_ptr += 1
-        self.request_path_to_next_point()
-
-    def request_path_to_next_point(self):
-        """Request a path from the current location to the current goal point.
-        Assumes that the path planner will initiate following a path from start pose to end pose once it is planned.
-        """
         if (
             self.points_of_interest_ptr < len(self.points_of_interest)
             and self.current_pose is not None
         ):
-            path_request = PoseArray()
-            path_request.poses = [
+            self.current_phase = Phase.FOLLOWING_PATH
+            self.controller.follow_path(
                 self.current_pose,
                 self.points_of_interest[self.points_of_interest_ptr][0],
-            ]
-            self.path_request_publisher.publish(path_request)
-            self.get_logger().info(
-                f"Requesting path to point {self.points_of_interest_ptr} and phase {self.points_of_interest[self.points_of_interest_ptr][1]}"
             )
-
-            # TODO: transitions directly into path following, should we idle until path is planned?
-            self.current_phase = Phase.FOLLOWING_PATH
+        else:
+            self.get_logger().info("Reached end of path or current pose is None")
 
 
 def main(args=None):
