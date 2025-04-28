@@ -12,7 +12,7 @@ class PurePursuit(Node):
     """Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed."""
 
     def __init__(self):
-        super().__init__("trajectory_follower")
+        super().__init__("pure_pursuit")
         self.declare_parameter("odom_topic", "default")
         self.declare_parameter("drive_topic", "default")
 
