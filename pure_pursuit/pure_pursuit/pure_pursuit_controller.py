@@ -36,7 +36,7 @@ class PurePursuit(Node):
         # Gives the exact point that the racecar will navigate to
         # All computation of this point (whether from a trajectory or goal location)
         #   should be done separately
-        # This should be in the world frame
+        # This should be in the robot frame
         self.lookahead_point = self.create_subscription(
             Float32MultiArray, "/lookahead_point", self.lookahead_point_callback, 1
         )
@@ -80,22 +80,12 @@ class PurePursuit(Node):
         drive_cmd = AckermannDriveStamped()
         drive_cmd.header.stamp = self.get_clock().now().to_msg()
 
-        # Transform lookahead point to robot frame
-        dx = lookahead_point[0] - self.current_x
-        dy = lookahead_point[1] - self.current_y
-
-        # Rotate into robot frame using negative yaw
-        local_x = np.cos(-self.current_theta) * dx - np.sin(-self.current_theta) * dy
-        local_y = np.sin(-self.current_theta) * dx + np.cos(-self.current_theta) * dy
-
-        # Avoid divide-by-zero
-        if local_x <= 0.001:
-            local_x = 0.001
-
+        dx = lookahead_point[0]
+        dy = lookahead_point[1]
         # find distance between robot and lookahead point
-        lookahead = np.sqrt(local_x**2 + local_y**2)
+        lookahead = np.sqrt(dx**2 + dy**2)
 
-        angle_to_goal = np.arctan2(local_y, local_x)
+        angle_to_goal = np.arctan2(dy, dx)
         angle = np.arctan(
             2 * self.wheelbase_length * np.sin(angle_to_goal) / (lookahead + 1e-6)
         )
