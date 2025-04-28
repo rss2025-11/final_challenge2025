@@ -23,12 +23,6 @@ class PurePursuit(Node):
             self.get_parameter("drive_topic").get_parameter_value().string_value
         )
 
-        # Odometry topic will depend on task. For moon race, we may not use particle filter.
-        # For shrink ray heist, we will definitely want to use localization
-        self.pose_sub = self.create_subscription(
-            Odometry, self.odom_topic, self.pose_callback, 1
-        )
-
         self.speed_sub = self.create_subscription(
             Float32, "/speed", self.speed_callback, 1
         )
@@ -58,30 +52,17 @@ class PurePursuit(Node):
 
         self.current_lookahead_point = [0.0, 0.0, 0.0] # x, y, theta
 
-    def lookahead_point_callback(self, msg):
-        self.current_lookahead_point = msg.data
-
     def speed_callback(self, msg):
         self.speed = msg.data
 
-    def pose_callback(self, odometry_msg):
-        # Access the orientation quaternion
-        orientation = odometry_msg.pose.pose.orientation
-        # Convert quaternion to Euler angles
-        orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
-        (roll, pitch, yaw) = euler_from_quaternion(orientation_list)
-        self.current_x = odometry_msg.pose.pose.position.x
-        self.current_y = odometry_msg.pose.pose.position.y
-        self.current_theta = yaw    
+    def lookahead_point_callback(self, msg):
+        self.current_lookahead_point = msg.data
+        dx = self.current_lookahead_point[0]
+        dy = self.current_lookahead_point[1]
 
-        self.control(self.current_lookahead_point)
-
-    def control(self, lookahead_point):
         drive_cmd = AckermannDriveStamped()
         drive_cmd.header.stamp = self.get_clock().now().to_msg()
 
-        dx = lookahead_point[0]
-        dy = lookahead_point[1]
         # find distance between robot and lookahead point
         lookahead = np.sqrt(dx**2 + dy**2)
 
@@ -93,6 +74,8 @@ class PurePursuit(Node):
         drive_cmd.drive.speed = self.speed
         drive_cmd.drive.steering_angle = angle
         self.drive_pub.publish(drive_cmd)
+
+
 
 def main(args=None):
     rclpy.init(args=args)
