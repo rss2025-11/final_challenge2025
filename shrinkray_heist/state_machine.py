@@ -2,13 +2,9 @@ import rclpy
 from rclpy.node import Node
 
 from geometry_msgs.msg import PoseArray, Pose
+from std_msgs.msg import Bool, Float32MultiArray
 
 from shrinkray_heist.controller import Controller
-
-from custom_msgs.msg import (
-    DetectionArray,
-    TrafficSignal,
-)  # TODO: defines these new msg types
 
 from enum import Enum
 
@@ -16,9 +12,9 @@ from enum import Enum
 class Phase(Enum):
     IDLE = 0
     FOLLOWING_PATH = 1
-    SIGNAL_DETECTION = 2
-    OBJECT_DETECTION = 3
-    HUMAN_OBSTACLE = 4
+    TRAFFIC_SIGNAL = 2
+    BANANA_DETECTION = 3
+    BANANA_COLLECTION = 4
 
 
 class StateMachine(Node):
@@ -28,26 +24,39 @@ class StateMachine(Node):
     This node manages the different phases of the challenge:
     - IDLE: Initialization and path planning
     - FOLLOWING_PATH: Following the planned path to the next point of interest
-    - SIGNAL_DETECTION: Detecting and responding to traffic signals
-    - OBJECT_DETECTION: Identifying and collecting the correct banana (shrink ray component)
-    - HUMAN_OBSTACLE: Avoiding human obstacles in the path
+    - TRAFFIC_SIGNAL: Detecting and responding to traffic signals
+    - BANANA_DETECTION: Identifying and collecting the correct banana (shrink ray component)
+    - BANANA_COLLECTION: Collecting the banana
     """
 
     def __init__(self):
         super().__init__("state_machine")
+        self.declare_parameter("banana_detection_topic", "/banana_detection")
+        self.declare_parameter("signal_detection_topic", "/signal_detection")
+        self.declare_parameter("shell_points_topic", "/shell_points")
+        self.declare_parameter("location_topic", "/pf/pose")
 
         # subscribers
         self.shell_points_subscriber = self.create_subscription(
-            PoseArray, "/shell_points", self.shell_points_callback, 1
+            PoseArray,
+            self.get_parameter("shell_points_topic").value,
+            self.shell_points_callback,
+            1,
         )
         self.detection_subscriber = self.create_subscription(
-            DetectionArray, "/detections", self.detection_callback, 1
+            Float32MultiArray,
+            self.get_parameter("banana_detection_topic").value,
+            self.detection_callback,
+            1,
         )
         self.signal_subscriber = self.create_subscription(
-            TrafficSignal, "/signals", self.signal_callback, 1
+            Bool,
+            self.get_parameter("signal_detection_topic").value,
+            self.signal_callback,
+            1,
         )
         self.location_subscriber = self.create_subscription(
-            Pose, "/pf/pose", self.location_callback, 1
+            Pose, self.get_parameter("location_topic").value, self.location_callback, 1
         )
 
         # state vars
@@ -56,7 +65,7 @@ class StateMachine(Node):
         self.current_pose = None
         self.current_speed = 0.0
         self.current_phase = Phase.IDLE
-        self.detections = {}
+        self.detection = None
         self.stop_signal = False
 
         # constants
@@ -68,9 +77,9 @@ class StateMachine(Node):
         self.get_logger().info("State Machine Initialized")
 
         self.PHASE_MAPPING = {
-            Phase.OBJECT_DETECTION: self.object_detection_phase,
-            Phase.SIGNAL_DETECTION: self.signal_detection_phase,
-            Phase.HUMAN_OBSTACLE: self.human_obstacle_phase,
+            Phase.BANANA_DETECTION: self.banana_detection_phase,
+            Phase.TRAFFIC_SIGNAL: self.traffic_signal_phase,
+            Phase.BANANA_COLLECTION: self.banana_collection_phase,
             Phase.IDLE: lambda: None,
         }
 
@@ -84,45 +93,44 @@ class StateMachine(Node):
             shell_points (PoseArray): Array of waypoints to visit
         """
         signal_pose = None  # TODO: need to hardcode
-        human_pose = None  # TODO: need to hardcode
 
         self.points_of_interest = [
-            (shell_points.poses[0], Phase.OBJECT_DETECTION),  # first banana location
-            (signal_pose, Phase.SIGNAL_DETECTION),  # signal location
-            (human_pose, Phase.HUMAN_OBSTACLE),  # human location
+            (shell_points.poses[0], Phase.BANANA_DETECTION),  # first banana region
+            (0, Phase.BANANA_COLLECTION),  # first banana location, filler
+            (signal_pose, Phase.TRAFFIC_SIGNAL),  # signal location
             (
                 shell_points.poses[2],
-                Phase.OBJECT_DETECTION,
-            ),  # second banana location, start backtrack
-            (human_pose, Phase.HUMAN_OBSTACLE),  # human location
-            (signal_pose, Phase.SIGNAL_DETECTION),  # signal location
+                Phase.BANANA_DETECTION,
+            ),  # second banana region
+            (0, Phase.BANANA_COLLECTION),  # second banana location, filler
+            (signal_pose, Phase.TRAFFIC_SIGNAL),  # signal location
             (shell_points.poses[3], Phase.IDLE),  # end location
         ]
 
         if self.current_phase == Phase.IDLE and self.current_pose is not None:
-            self.request_path_to_next_point()
+            self.transition()
 
-    def detection_callback(self, detections: DetectionArray):
+    def detection_callback(self, detection: Float32MultiArray):
         """
-        Callback for receiving object detections.
+        Callback for receiving banana detection.
 
         Args:
-            detections (DetectionArray): Array of detected objects
+            detection (Float32MultiArray): Location of the banana [x, y] m in robot frame
         """
-        # If we're in object detection phase, process the detections
-        if self.current_phase == Phase.OBJECT_DETECTION:
-            self.detections = detections
+        # If we're in banana detection phase, process the detection
+        if self.current_phase == Phase.BANANA_DETECTION:
+            self.detection = detection.data
 
-    def signal_callback(self, signal: TrafficSignal):
+    def signal_callback(self, signal: Bool):
         """
         Callback for receiving a traffice signal detection.
 
         Args:
-            signal (TrafficSignal): A detected traffic signal
+            signal (Bool): True if Red, False if Green
         """
         # If we're in signal detection phase, save the traffic signal
-        if self.current_phase == Phase.SIGNAL_DETECTION:
-            self.stop_signal = signal.is_stop_signal
+        if self.current_phase == Phase.TRAFFIC_SIGNAL:
+            self.stop_signal = signal.data
 
     def location_callback(self, location: Pose):
         """
@@ -134,11 +142,15 @@ class StateMachine(Node):
         self.current_pose = location
 
         if self.current_phase == Phase.FOLLOWING_PATH:
-            self.handle_path_following()
+            self.check_goal_condition()
 
-    def handle_path_following(self):
-        """Handle logic during path following phase."""
-        # Check if we've reached the current goal
+    def transition(self):
+        """Transition to the next phase."""
+        self.current_phase = self.points_of_interest[self.points_of_interest_ptr][1]
+        self.PHASE_MAPPING[self.current_phase]()
+
+    def check_goal_condition(self):
+        """Check if we've reached the current goal."""
         current_goal_point = self.points_of_interest[self.points_of_interest_ptr][0]
         current_goal_phase = self.points_of_interest[self.points_of_interest_ptr][1]
 
@@ -151,35 +163,26 @@ class StateMachine(Node):
             self.current_phase = current_goal_phase
             self.PHASE_MAPPING[current_goal_phase]()
 
-    def object_detection_phase(self):
-        """Process object detections during OBJECT_DETECTION phase."""
-        # Find the correct banana (shrink ray component)
-        correct_banana = None
-        for _, detection in self.detections.items():
-            if detection.is_correct_part:  # Assuming this field exists
-                correct_banana = detection
-                break
+    def banana_detection_phase(self):
+        """Process banana detection during BANANA_DETECTION phase."""
+        self.points_of_interest[self.points_of_interest_ptr + 1] = (
+            self.controller.robot_to_map_frame(self.detection),
+            Phase.BANANA_COLLECTION,
+        )
+        self.transition()
 
-        if correct_banana is not None:
-            self.controller.collect_banana(
-                correct_banana.location
-            )  # will take some time
-            self.follow_path_phase()
+    def banana_collection_phase(self):
+        """Process banana collection during BANANA_COLLECTION phase."""
+        self.controller.collect_banana(self.current_pose)  # will take some time
+        self.transition()
 
-    def signal_detection_phase(self):
-        """Process signal detection during SIGNAL_DETECTION phase."""
+    def traffic_signal_phase(self):
+        """Process traffic signal detection during TRAFFIC_SIGNAL phase."""
         while self.stop_signal is None or self.stop_signal:
             self.controller.await_signal()  # will just send a full zero control at a higher mux
             # TODO: decide how to handle tight loop, maybe sleep, maybe follow vesc command freq
 
-        self.follow_path_phase()
-
-    def human_obstacle_phase(self):
-        """Handle human obstacle avoidance logic."""
-        self.controller.avoid_human()  # will go past the human and return once done
-        # TODO: might need a sleep here if we are waiting for lower level controller to
-        # complete the human avoidance path follow
-        self.follow_path_phase()
+        self.transition()
 
     def follow_path_phase(self):
         """Follow a path to a goal point."""

@@ -273,3 +273,53 @@ class Controller:
         theta_robot = np.arctan2(np.sin(theta_robot), np.cos(theta_robot))
 
         return [x_robot, y_robot, theta_robot]
+
+    def robot_to_map_frame(self, position) -> Pose:
+        """
+        Transform position from robot frame to map frame.
+
+        Args:
+            position: Position in robot frame, [x, y, theta]
+
+        Returns:
+            Pose in map frame
+        """
+        # Get robot position and orientation
+        robot_x = self.state_machine.current_pose.position.x
+        robot_y = self.state_machine.current_pose.position.y
+        q = self.state_machine.current_pose.orientation
+        quaternion = [q.x, q.y, q.z, q.w]
+        _, _, robot_theta = tf_transformations.euler_from_quaternion(quaternion)
+
+        # Extract robot frame coordinates
+        x_robot = position[0]
+        y_robot = position[1]
+        theta_robot = position[2]
+
+        # Rotate by positive robot_theta (inverse of negative rotation)
+        cos_theta = np.cos(robot_theta)
+        sin_theta = np.sin(robot_theta)
+
+        # Transform to map frame (inverse of robot frame transformation)
+        x_map = x_robot * cos_theta - y_robot * sin_theta + robot_x
+        y_map = x_robot * sin_theta + y_robot * cos_theta + robot_y
+
+        # Add robot orientation to get map frame orientation
+        theta_map = theta_robot + robot_theta
+
+        # Normalize angle
+        theta_map = np.arctan2(np.sin(theta_map), np.cos(theta_map))
+
+        # Create pose in map frame
+        pose = Pose()
+        pose.position.x = x_map
+        pose.position.y = y_map
+
+        # Convert theta to quaternion
+        q = tf_transformations.quaternion_from_euler(0, 0, theta_map)
+        pose.orientation.x = q[0]
+        pose.orientation.y = q[1]
+        pose.orientation.z = q[2]
+        pose.orientation.w = q[3]
+
+        return pose
