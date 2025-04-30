@@ -94,10 +94,10 @@ class StateMachine(Node):
             shell_points.poses[0],  # First banana region
             None,  # Placeholder for first banana location (will be updated)
             signal_pose,  # Signal location
-            shell_points.poses[2],  # Second banana region
+            shell_points.poses[1],  # Second banana region
             None,  # Placeholder for second banana location
             signal_pose,  # Signal location
-            shell_points.poses[3],  # End location
+            shell_points.poses[2],  # End location
         ]
 
         # Set up phases for each point
