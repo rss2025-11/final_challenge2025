@@ -4,7 +4,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseArray, Pose
 from std_msgs.msg import Bool, Float32MultiArray
 
-from shrinkray_heist.controller import Controller
+from final_challenge2025.controller import Controller
 
 from enum import Enum
 
