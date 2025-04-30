@@ -67,9 +67,6 @@ class Controller:
                 )
             )
         )
-        time.sleep(
-            0.01
-        )  # make this control 100 Hz, presumably faster than lower mux control
 
     def follow_path(self, start_pose, end_pose):
         """

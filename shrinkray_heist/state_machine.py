@@ -35,6 +35,7 @@ class StateMachine(Node):
         self.declare_parameter("signal_detection_topic", "/signal_detection")
         self.declare_parameter("shell_points_topic", "/shell_points")
         self.declare_parameter("location_topic", "/pf/pose")
+        self.declare_parameter("main_loop_rate", 60.0)  # Hz
 
         # subscribers
         self.shell_points_subscriber = self.create_subscription(
@@ -60,28 +61,22 @@ class StateMachine(Node):
         )
 
         # state vars
-        self.points_of_interest = []  # tuples of (point, phase)
-        self.points_of_interest_ptr = 0
+        self.goal_points = []  # Navigation waypoints
+        self.goal_phases = []  # Phase to execute at each point
+        self.current_pointer = -1
         self.current_pose = None
         self.current_speed = 0.0
         self.current_phase = Phase.IDLE
         self.detection = None
-        self.stop_signal = False
+        self.stop_signal = None
+        self.current_path_plan = None
 
-        # constants
-        self.goal_threshold = 0.5
-
-        # Create timer for periodic state checking
-        self.timer = self.create_timer(0.1, self.state_update)
+        # Create main loop timer
+        self.main_loop_timer = self.create_timer(
+            1.0 / self.get_parameter("main_loop_rate").value, self.main_loop
+        )
 
         self.get_logger().info("State Machine Initialized")
-
-        self.PHASE_MAPPING = {
-            Phase.BANANA_DETECTION: self.banana_detection_phase,
-            Phase.TRAFFIC_SIGNAL: self.traffic_signal_phase,
-            Phase.BANANA_COLLECTION: self.banana_collection_phase,
-            Phase.IDLE: lambda: None,
-        }
 
         self.controller = Controller(self)
 
@@ -94,21 +89,27 @@ class StateMachine(Node):
         """
         signal_pose = None  # TODO: need to hardcode
 
-        self.points_of_interest = [
-            (shell_points.poses[0], Phase.BANANA_DETECTION),  # first banana region
-            (0, Phase.BANANA_COLLECTION),  # first banana location, filler
-            (signal_pose, Phase.TRAFFIC_SIGNAL),  # signal location
-            (
-                shell_points.poses[2],
-                Phase.BANANA_DETECTION,
-            ),  # second banana region
-            (0, Phase.BANANA_COLLECTION),  # second banana location, filler
-            (signal_pose, Phase.TRAFFIC_SIGNAL),  # signal location
-            (shell_points.poses[3], Phase.IDLE),  # end location
+        # Set up navigation points
+        self.goal_points = [
+            shell_points.poses[0],  # First banana region
+            None,  # Placeholder for first banana location (will be updated)
+            signal_pose,  # Signal location
+            shell_points.poses[2],  # Second banana region
+            None,  # Placeholder for second banana location
+            signal_pose,  # Signal location
+            shell_points.poses[3],  # End location
         ]
 
-        if self.current_phase == Phase.IDLE and self.current_pose is not None:
-            self.transition()
+        # Set up phases for each point
+        self.goal_phases = [
+            Phase.BANANA_DETECTION,
+            Phase.BANANA_COLLECTION,
+            Phase.TRAFFIC_SIGNAL,
+            Phase.BANANA_DETECTION,
+            Phase.BANANA_COLLECTION,
+            Phase.TRAFFIC_SIGNAL,
+            Phase.IDLE,  # End
+        ]
 
     def detection_callback(self, detection: Float32MultiArray):
         """
@@ -117,9 +118,7 @@ class StateMachine(Node):
         Args:
             detection (Float32MultiArray): Location of the banana [x, y] m in robot frame
         """
-        # If we're in banana detection phase, process the detection
-        if self.current_phase == Phase.BANANA_DETECTION:
-            self.detection = detection.data
+        self.detection = detection.data
 
     def signal_callback(self, signal: Bool):
         """
@@ -128,9 +127,7 @@ class StateMachine(Node):
         Args:
             signal (Bool): True if Red, False if Green
         """
-        # If we're in signal detection phase, save the traffic signal
-        if self.current_phase == Phase.TRAFFIC_SIGNAL:
-            self.stop_signal = signal.data
+        self.stop_signal = signal.data
 
     def location_callback(self, location: Pose):
         """
@@ -141,60 +138,76 @@ class StateMachine(Node):
         """
         self.current_pose = location
 
-        if self.current_phase == Phase.FOLLOWING_PATH:
-            self.check_goal_condition()
+    def main_loop(self):
+        """Main control loop that runs at a fixed frequency."""
+        if self.current_pose is None:
+            return
 
-    def transition(self):
-        """Transition to the next phase."""
-        self.current_phase = self.points_of_interest[self.points_of_interest_ptr][1]
-        self.PHASE_MAPPING[self.current_phase]()
+        if self.current_phase == Phase.IDLE:
+            if len(self.goal_points) > 0 and self.current_pointer < 0:
+                self.current_pointer = 0
+                self.current_phase = Phase.FOLLOWING_PATH
+                self.follow_path_phase()
 
-    def check_goal_condition(self):
+        elif self.current_phase == Phase.FOLLOWING_PATH:
+            if self.check_goal_condition():
+                # Execute the phase for the point we just reached
+                self.current_phase = self.goal_phases[self.current_pointer]
+                # TODO: use controller to make robot stop
+
+        elif self.current_phase == Phase.TRAFFIC_SIGNAL:
+            if self.stop_signal is not None and not self.stop_signal:
+                # Green light, continue
+                self.current_pointer += 1
+                self.current_phase = Phase.FOLLOWING_PATH
+                self.follow_path_phase()
+            else:
+                # Red light, wait
+                self.controller.await_signal()
+
+        elif self.current_phase == Phase.BANANA_DETECTION:
+            if self.detection is not None:
+                # Update the next point (banana collection location)
+                banana_pose = self.controller.robot_to_map_frame(self.detection)
+                self.goal_points[self.current_pointer + 1] = banana_pose
+                # Move to the next point (banana collection)
+                self.current_pointer += 1
+                self.current_phase = Phase.FOLLOWING_PATH
+                self.detection = None
+                self.follow_path_phase()
+
+        elif self.current_phase == Phase.BANANA_COLLECTION:
+            # Collect banana and move to next point
+            self.controller.collect_banana(self.current_pose)
+            self.current_pointer += 1
+            self.current_phase = Phase.FOLLOWING_PATH
+            self.follow_path_phase()
+
+    def check_goal_condition(self, threshold: float = 0.5):
         """Check if we've reached the current goal."""
-        current_goal_point = self.points_of_interest[self.points_of_interest_ptr][0]
-        current_goal_phase = self.points_of_interest[self.points_of_interest_ptr][1]
+        if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
+            return False
+
+        current_goal_point = self.goal_points[self.current_pointer]
 
         # Calculate distance to goal (simple Euclidean distance for now)
         dx = self.current_pose.position.x - current_goal_point.position.x
         dy = self.current_pose.position.y - current_goal_point.position.y
         distance = (dx**2 + dy**2) ** 0.5
 
-        if distance < self.goal_threshold:
-            self.current_phase = current_goal_phase
-            self.PHASE_MAPPING[current_goal_phase]()
-
-    def banana_detection_phase(self):
-        """Process banana detection during BANANA_DETECTION phase."""
-        self.points_of_interest[self.points_of_interest_ptr + 1] = (
-            self.controller.robot_to_map_frame(self.detection),
-            Phase.BANANA_COLLECTION,
-        )
-        self.transition()
-
-    def banana_collection_phase(self):
-        """Process banana collection during BANANA_COLLECTION phase."""
-        self.controller.collect_banana(self.current_pose)  # will take some time
-        self.transition()
-
-    def traffic_signal_phase(self):
-        """Process traffic signal detection during TRAFFIC_SIGNAL phase."""
-        while self.stop_signal is None or self.stop_signal:
-            self.controller.await_signal()  # will just send a full zero control at a higher mux
-            # TODO: decide how to handle tight loop, maybe sleep, maybe follow vesc command freq
-
-        self.transition()
+        return distance < threshold
 
     def follow_path_phase(self):
-        """Follow a path to a goal point."""
-        self.points_of_interest_ptr += 1
+        """Follow a path to the current goal point from current pose."""
         if (
-            self.points_of_interest_ptr < len(self.points_of_interest)
+            self.current_pointer < len(self.goal_points)
             and self.current_pose is not None
         ):
-            self.current_phase = Phase.FOLLOWING_PATH
+            goal_point = self.goal_points[self.current_pointer]
+            # TODO: this might block the main phases loop/timer
             self.controller.follow_path(
                 self.current_pose,
-                self.points_of_interest[self.points_of_interest_ptr][0],
+                goal_point,
             )
         else:
             self.get_logger().info("Reached end of path or current pose is None")
