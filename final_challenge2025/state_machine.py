@@ -1,8 +1,10 @@
 import rclpy
 from rclpy.node import Node
 
+
 from geometry_msgs.msg import PoseArray, Pose
 from std_msgs.msg import Bool, Float32MultiArray
+from nav_msgs.msg import Odometry
 
 from final_challenge2025.controller import Controller
 
@@ -34,30 +36,36 @@ class StateMachine(Node):
         self.declare_parameter("banana_detection_topic", "/banana_detection")
         self.declare_parameter("signal_detection_topic", "/signal_detection")
         self.declare_parameter("shell_points_topic", "/shell_points")
-        self.declare_parameter("odom_topic", "/pf/pose/odom")
+        self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("main_loop_rate", 60.0)  # Hz
+
+        self.banana_detection_topic = self.get_parameter("banana_detection_topic").get_parameter_value().string_value
+        self.signal_detection_topic = self.get_parameter("signal_detection_topic").get_parameter_value().string_value
+        self.shell_points_topic = self.get_parameter("shell_points_topic").get_parameter_value().string_value
+        self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
+        self.main_loop_rate = self.get_parameter("main_loop_rate").get_parameter_value().double_value
 
         # subscribers
         self.shell_points_subscriber = self.create_subscription(
             PoseArray,
-            self.get_parameter("shell_points_topic").value,
+            self.shell_points_topic,
             self.shell_points_callback,
             1,
         )
         self.detection_subscriber = self.create_subscription(
             Float32MultiArray,
-            self.get_parameter("banana_detection_topic").value,
+            self.banana_detection_topic,
             self.detection_callback,
             1,
         )
         self.signal_subscriber = self.create_subscription(
             Bool,
-            self.get_parameter("signal_detection_topic").value,
+            self.signal_detection_topic,
             self.signal_callback,
             1,
         )
         self.location_subscriber = self.create_subscription(
-            Pose, self.get_parameter("odom_topic").value, self.location_callback, 1
+            Odometry, self.odom_topic, self.location_callback, 1
         )
 
         # state vars
@@ -87,7 +95,7 @@ class StateMachine(Node):
         Args:
             shell_points (PoseArray): Array of waypoints to visit
         """
-        self.get_logger().info(f"Received shell points: {shell_points}")
+        self.get_logger().info("Received shell points")
         signal_pose = None  # TODO: need to hardcode
 
         # Set up navigation points
@@ -111,6 +119,11 @@ class StateMachine(Node):
             Phase.TRAFFIC_SIGNAL,
             Phase.IDLE,  # End
         ]
+        
+        # Add debug info
+        self.get_logger().info(f"Goal points length: {len(self.goal_points)}")
+        self.get_logger().info(f"Current pointer: {self.current_pointer}")
+        self.get_logger().info(f"Current phase: {self.current_phase}")
 
     def detection_callback(self, detection: Float32MultiArray):
         """
@@ -130,19 +143,23 @@ class StateMachine(Node):
         """
         self.stop_signal = signal.data
 
-    def location_callback(self, location: Pose):
+    def location_callback(self, location: Odometry):
         """
         Callback for receiving current vehicle position.
 
         Args:
-            location (Pose): Current position of the vehicle
+            location (Odometry): Current odometry of the vehicle
         """
-        self.current_pose = location
+        self.current_pose = location.pose.pose  # Extract the Pose from PoseWithCovariance
 
     def main_loop(self):
         """Main control loop that runs at a fixed frequency."""
         if self.current_pose is None:
+            # self.get_logger().warn("Current pose is None, waiting for pose data...")
             return
+
+        # Add debug info at start of each loop
+        # self.get_logger().info(f"Main loop - Phase: {self.current_phase}, Pointer: {self.current_pointer}, Goals: {len(self.goal_points)}")
 
         if self.current_phase == Phase.IDLE:
             if len(self.goal_points) > 0 and self.current_pointer < 0:

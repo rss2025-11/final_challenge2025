@@ -1,8 +1,6 @@
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from rclpy.node import Node
-from nav_msgs.msg import Odometry
-from tf_transformations import euler_from_quaternion
 import numpy as np
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Float32
@@ -14,12 +12,8 @@ class PurePursuit(Node):
 
     def __init__(self):
         super().__init__("pure_pursuit")
-        self.declare_parameter("odom_topic", "default")
-        self.declare_parameter("drive_topic", "default")
+        self.declare_parameter("drive_topic", "/drive")
 
-        self.odom_topic = (
-            self.get_parameter("odom_topic").get_parameter_value().string_value
-        )
         self.drive_topic = (
             self.get_parameter("drive_topic").get_parameter_value().string_value
         )

@@ -66,10 +66,13 @@ class Controller:
         self.lookahead_distance = 0.5
         self.current_path_index = 0
 
+        self.state_machine.get_logger().info("Controller initialized")
+
     def planned_path_callback(self, planned_path):
         """
         Callback for receiving the planned path.
         """
+        self.state_machine.get_logger().info("Received path plan")
         self.current_path_plan = planned_path
 
     def collect_banana(self, banana_location):
@@ -111,7 +114,7 @@ class Controller:
         while not self.current_path_plan:
             # wait for new path plan to populate
             time.sleep(0.1)
-
+        
         # Get initial robot pose
         robot_pose = self.state_machine.current_pose
 
