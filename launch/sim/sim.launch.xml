@@ -1,0 +1,10 @@
+<launch>
+    <node pkg="final_challenge2025" exec="state_machine" name="state_machine" output="screen">
+        <param from="$(find-pkg-share final_challenge2025)/config/sim/config.yaml"/>
+    </node>
+    <node pkg="final_challenge2025" exec="pure_pursuit" name="pure_pursuit" output="screen">
+        <param from="$(find-pkg-share final_challenge2025)/config/sim/config.yaml"/>
+    </node>
+    <node pkg="final_challenge2025" exec="basement_point_publisher" name="basement_point_publisher" output="screen">
+    </node>
+</launch>

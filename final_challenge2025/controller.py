@@ -10,27 +10,55 @@ class Controller:
     def __init__(self, ros_node):
         self.state_machine = ros_node
 
-        self.state_machine.declare_parameter(
-            "drive_topic", "/high_mux/ackermann_drive"
-        )  # TODO: update with correct topic name
+        self.state_machine.declare_parameter("lookahead_distance", 0.5)
+        self.state_machine.declare_parameter("path_request_topic", "/path_request")
+        self.state_machine.declare_parameter("drive_topic", "/high_mux/ackermann_drive")
+        self.state_machine.declare_parameter("lookahead_point_topic", "/lookahead_point")
+        self.state_machine.declare_parameter("planned_path_topic", "/planned_path")
+        
+        self.lookahead_distance = (
+            self.state_machine.get_parameter("lookahead_distance")
+            .get_parameter_value()
+            .float_value
+        )
+
         self.drive_topic = (
             self.state_machine.get_parameter("drive_topic")
             .get_parameter_value()
             .string_value
         )
+        self.path_request_topic = (
+            self.state_machine.get_parameter("path_request_topic")
+            .get_parameter_value()
+            .string_value
+        )
+        self.lookahead_point_topic = (
+            self.state_machine.get_parameter("lookahead_point_topic")
+            .get_parameter_value()
+            .string_value
+        )
+        self.planned_path_topic = (
+            self.state_machine.get_parameter("planned_path_topic")
+            .get_parameter_value()
+            .string_value
+        )
+
+        self.lookahead_point_publisher = self.state_machine.create_publisher(
+            Float32MultiArray,
+            self.lookahead_point_topic,
+            1,
+        )
 
         self.path_request_publisher = self.state_machine.create_publisher(
-            PoseArray, "/path_request", 1
+            PoseArray, self.path_request_topic, 1
         )
-        self.lookahead_point_publisher = self.state_machine.create_publisher(
-            Float32MultiArray, "/lookahead_point", 1
-        )
+
         self.drive_pub = self.state_machine.create_publisher(
             AckermannDriveStamped, self.drive_topic, 1
         )
 
         self.planned_path_subscriber = self.state_machine.create_subscription(
-            PoseArray, "/planned_path", self.planned_path_callback, 1
+            PoseArray, self.planned_path_topic, self.planned_path_callback, 1
         )
 
         self.current_path_plan = None
@@ -80,6 +108,7 @@ class Controller:
         self.current_path_index = 0
 
         while not self.current_path_plan:
+            # wait for new path plan to populate
             time.sleep(0.1)
 
         # Get initial robot pose
@@ -105,6 +134,10 @@ class Controller:
 
             # Small sleep to control update rate
             time.sleep(0.01)
+
+        # TODO: might want to publish a stop command here
+        self.current_path_index = 0
+        self.current_path_plan = None
 
     def find_lookahead_point(self):
         """

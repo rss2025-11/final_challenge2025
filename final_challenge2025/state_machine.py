@@ -34,7 +34,7 @@ class StateMachine(Node):
         self.declare_parameter("banana_detection_topic", "/banana_detection")
         self.declare_parameter("signal_detection_topic", "/signal_detection")
         self.declare_parameter("shell_points_topic", "/shell_points")
-        self.declare_parameter("location_topic", "/pf/pose")
+        self.declare_parameter("odom_topic", "/pf/pose/odom")
         self.declare_parameter("main_loop_rate", 60.0)  # Hz
 
         # subscribers
@@ -57,7 +57,7 @@ class StateMachine(Node):
             1,
         )
         self.location_subscriber = self.create_subscription(
-            Pose, self.get_parameter("location_topic").value, self.location_callback, 1
+            Pose, self.get_parameter("odom_topic").value, self.location_callback, 1
         )
 
         # state vars
