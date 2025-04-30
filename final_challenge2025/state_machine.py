@@ -76,9 +76,9 @@ class StateMachine(Node):
             1.0 / self.get_parameter("main_loop_rate").value, self.main_loop
         )
 
-        self.get_logger().info("State Machine Initialized")
-
         self.controller = Controller(self)
+
+        self.get_logger().info("State Machine Initialized")
 
     def shell_points_callback(self, shell_points: PoseArray):
         """
@@ -87,6 +87,7 @@ class StateMachine(Node):
         Args:
             shell_points (PoseArray): Array of waypoints to visit
         """
+        self.get_logger().info(f"Received shell points: {shell_points}")
         signal_pose = None  # TODO: need to hardcode
 
         # Set up navigation points
@@ -97,7 +98,7 @@ class StateMachine(Node):
             shell_points.poses[1],  # Second banana region
             None,  # Placeholder for second banana location
             signal_pose,  # Signal location
-            shell_points.poses[2],  # End location
+            None,  # End location
         ]
 
         # Set up phases for each point
@@ -145,6 +146,7 @@ class StateMachine(Node):
 
         if self.current_phase == Phase.IDLE:
             if len(self.goal_points) > 0 and self.current_pointer < 0:
+                self.get_logger().info("Leaving idle phase, starting challenge")
                 self.current_pointer = 0
                 self.current_phase = Phase.FOLLOWING_PATH
                 self.follow_path_phase()
@@ -205,6 +207,7 @@ class StateMachine(Node):
         ):
             goal_point = self.goal_points[self.current_pointer]
             # TODO: this might block the main phases loop/timer
+            self.get_logger().info(f"Following path to {self.goal_phases[self.current_pointer]}")
             self.controller.follow_path(
                 self.current_pose,
                 goal_point,

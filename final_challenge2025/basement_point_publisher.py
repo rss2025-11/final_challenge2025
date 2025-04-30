@@ -24,7 +24,7 @@ class BasementPointPublisher(Node):
         self.get_logger().info(f"Received point: {x}, {y}")
         self.array.append(Pose(position=Point(x=x, y=y, z=0.0)))
         
-        if len(self.array) == 3:
+        if len(self.array) == 2:
             self.publish()
 
     def publish(self):
@@ -36,7 +36,7 @@ class BasementPointPublisher(Node):
 
         # Print to Command Line
         points_str = '\n'+'\n'.join([f"({p.position.x},{p.position.y})" for p in self.array])
-        self.get_logger().info(f"Published 3 points: {points_str}")
+        self.get_logger().info(f"Published 2 points: {points_str}")
 
         # Reset Array
         self.array = []
