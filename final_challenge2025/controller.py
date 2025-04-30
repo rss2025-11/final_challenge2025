@@ -1,7 +1,8 @@
 import tf_transformations
 import numpy as np
 
-from geometry_msgs.msg import PoseArray, Float32MultiArray, Pose
+from geometry_msgs.msg import PoseArray, Pose
+from std_msgs.msg import Float32MultiArray
 from ackermann_msgs.msg import AckermannDriveStamped, AckermannDrive
 import time
 
@@ -19,7 +20,7 @@ class Controller:
         self.lookahead_distance = (
             self.state_machine.get_parameter("lookahead_distance")
             .get_parameter_value()
-            .float_value
+            .double_value
         )
 
         self.drive_topic = (
