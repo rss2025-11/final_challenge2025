@@ -65,6 +65,7 @@ class Controller:
         self.current_path_plan = None
         self.lookahead_distance = 0.5
         self.current_path_index = 0
+        self.waiting_for_path = False  # Flag to track if we're waiting for a path
 
         self.state_machine.get_logger().info("Controller initialized")
 
@@ -72,8 +73,45 @@ class Controller:
         """
         Callback for receiving the planned path.
         """
-        self.state_machine.get_logger().info("Received path plan")
+        if not self.waiting_for_path:
+            # If we're not waiting for a path, ignore this callback
+            return
+            
+        self.state_machine.get_logger().info("Received path plan, starting navigation")
         self.current_path_plan = planned_path
+        self.current_path_index = 0
+        self.waiting_for_path = False
+        
+        # Start the path execution
+        self.state_machine.execute_path_timer = self.state_machine.create_timer(0.01, self.execute_path)   # TODO: parametrize the drive command freq
+        
+    def execute_path(self):
+        """
+        Execute one step of path following
+        """
+        if not self.current_path_plan or self.current_path_index >= len(self.current_path_plan.poses):
+            self.state_machine.get_logger().info("Path execution complete")
+            self.current_path_plan = None
+            self.current_path_index = 0
+            return True  # Path execution complete
+            
+        robot_pose = self.state_machine.current_pose
+        if robot_pose is None:
+            self.state_machine.get_logger().warn("No robot pose available")
+            return False
+            
+        # Find lookahead point
+        lookahead_point = self.find_lookahead_point()
+        
+        if lookahead_point is None:
+            self.state_machine.get_logger().info("Reached end of path")
+            self.current_path_plan = None
+            self.current_path_index = 0
+            return True
+            
+        # Publish the lookahead point
+        self.publish_lookahead_point(lookahead_point)
+        return False  # Path execution not complete
 
     def collect_banana(self, banana_location):
         """
@@ -84,65 +122,34 @@ class Controller:
         self.follow_path(self.state_machine.current_pose, banana_location)
         time.sleep(5)
 
+    def stop_car(self):
+        """
+        Stop the car by publishing a zero drive command.
+        """
+        self.drive_pub.publish(
+            AckermannDriveStamped(drive=AckermannDrive(steering=0.0, acceleration=0.0, steering_angle=0.0, steering_angle_velocity=0.0))
+        )
+
     def await_signal(self):
         """
         Await a signal by stopping and waiting for the signal to change.
         """
         # TODO: might not even need to pub a drive command, does sleep work?
-        self.drive_pub.publish(
-            AckermannDriveStamped(
-                drive=AckermannDrive(
-                    steering=0.0,
-                    acceleration=0.0,
-                    steering_angle=0.0,
-                    steering_angle_velocity=0.0,
-                )
-            )
-        )
+        self.stop_car()
+        time.sleep(5)
 
     def follow_path(self, start_pose, end_pose):
         """
         Follow a path to a goal point.
         """
+        self.state_machine.get_logger().info("Requesting path plan")
         path_request = PoseArray()
         path_request.poses = [start_pose, end_pose]
-        self.path_request_publisher.publish(path_request)
-
-        # Reset current path index
-        self.current_path_index = 0
-
-        while not self.current_path_plan:
-            # wait for new path plan to populate
-            time.sleep(0.1)
         
-        # Get initial robot pose
-        robot_pose = self.state_machine.current_pose
-
-        # Loop until we reach the end of the path
-        while self.current_path_index < len(self.current_path_plan.poses):
-            # Update robot pose
-            robot_pose = self.state_machine.current_pose
-            if robot_pose is None:
-                time.sleep(0.1)
-                continue
-
-            # Find lookahead point
-            lookahead_point = self.find_lookahead_point(robot_pose)
-
-            # If we've reached the end of the path
-            if lookahead_point is None:
-                break
-
-            # Publish the lookahead point (transformed to robot frame)
-            self.publish_lookahead_point(lookahead_point)
-
-            # Small sleep to control update rate
-            time.sleep(0.01)
-
-        # TODO: might want to publish a stop command here
-        self.current_path_index = 0
-        self.current_path_plan = None
-
+        # Set waiting flag before publishing
+        self.waiting_for_path = True
+        self.path_request_publisher.publish(path_request)
+        
     def find_lookahead_point(self):
         """
         Find the lookahead point along the path.

@@ -37,7 +37,7 @@ class PurePursuit(Node):
         self.point_follow_pub = self.create_publisher(Marker, "/point_to_follow", 1)
 
         self.wheelbase_length = 0.33
-        self.speed = 0.0
+        self.speed = 2.0
 
         self.current_x = 0.0
         self.current_y = 0.0

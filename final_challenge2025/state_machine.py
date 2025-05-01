@@ -79,10 +79,11 @@ class StateMachine(Node):
         self.stop_signal = None
         self.current_path_plan = None
 
-        # Create main loop timer
+        # Timers
         self.main_loop_timer = self.create_timer(
             1.0 / self.get_parameter("main_loop_rate").value, self.main_loop
         )
+        self.execute_path_timer = None
 
         self.controller = Controller(self)
 
@@ -172,6 +173,9 @@ class StateMachine(Node):
             if self.check_goal_condition():
                 # Execute the phase for the point we just reached
                 self.current_phase = self.goal_phases[self.current_pointer]
+                # remove the follow path timer
+                if self.execute_path_timer:
+                    self.execute_path_timer.cancel()
                 # TODO: use controller to make robot stop
 
         elif self.current_phase == Phase.TRAFFIC_SIGNAL:
