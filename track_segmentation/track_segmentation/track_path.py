@@ -5,12 +5,11 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 from visualization_msgs.msg import Marker
-import cv2
+import cv2 as cv
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import PoseArray
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Point #geometry_msgs not in CMake file
-from final_challenge2025.track_segmentation.track_segmentation.homography_matrix import *
 
 class TrackSegment(Node):
     """
@@ -24,19 +23,49 @@ class TrackSegment(Node):
         # Subscribe to ZED camera RGB frames
         self.image_sub = self.create_subscription(Image, "/zed/zed_node/rgb/image_rect_color", self.image_callback, 5)
         self.bridge = CvBridge() # Converts between ROS images and OpenCV Images
-        self.debug_pub = self.create_publisher(Image, "/cone_debug_img", 10)
+        self.debug_pub = self.create_publisher(Image, "/debug_img", 10)
         self.bridge = CvBridge()
-        self.homography = create_homography_matrix()
+        self.homography = self.create_homography_matrix()
         self.inv_homography = np.linalg.inv(self.homography)
         self.lookahead_dist = 2.0 # meters
         self.lookahead_pt_history = np.tile([self.lookahead_dist, 0.0], (20, 1))
+
+    
+    def create_homography_matrix(self):
+        # PTS_IMAGE_PLANE = [[544, 257], [155, 207], [304, 196], [545, 193], [237, 177], [269, 196], [398, 168]]  
+        PTS_IMAGE_PLANE = [[408, 333], [287, 215], [214, 219], [237, 190], [376, 192], [462, 231], [469, 203]]  
+        # PTS_GROUND_PLANE = [[26.25, -14.5], [44.75, 21], [61, 2.25], [96.75, 17.75], [58.5, -38.25] ,[120.75,12.25], [123, -31.75]]  # dummy points
+        PTS_GROUND_PLANE = [[37.5, -3.5], [107, 15], [100, 35.5], [174, 26.75], [164.5, -22.5] ,[87, -29.5], [134.5, -51.5]]  # dummy points
+        
+        METERS_PER_CM = 0.01
+
+        METERS_PER_INCH = 0.0254
+
+        if not len(PTS_GROUND_PLANE) == len(PTS_IMAGE_PLANE):
+            print(
+                "ERROR: PTS_GROUND_PLANE and PTS_IMAGE_PLANE should be of same length"
+            )
+
+        # Initialize data into a homography matrix
+
+        np_pts_ground = np.array(PTS_GROUND_PLANE)
+        np_pts_ground = np_pts_ground * METERS_PER_CM
+        np_pts_ground = np.float32(np_pts_ground[:, np.newaxis, :])
+
+        np_pts_image = np.array(PTS_IMAGE_PLANE)
+        np_pts_image = np_pts_image * 1.0
+        np_pts_image = np.float32(np_pts_image[:, np.newaxis, :])
+        homography, err = cv.findHomography(np_pts_image, np_pts_ground)
+        print("Homography Transformer Initialized")
+        return homography
+
 
     def image_callback(self, image_msg):
         try:
             # 1. Convert ROS image to OpenCV
             image = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding="bgr8")
+            input_image = image
             height, width = image.shape[:2]
-            display_frame = image.copy()
 
             # 2. Process edges
             cdstP, linesP = self.edges_clean(image)
@@ -44,23 +73,22 @@ class TrackSegment(Node):
             if linesP is not None:
                 # 3. Detect closest line and project to ground plane
                 closest_line, is_left = self.compute_lane_edges(
-                    linesP, width, height, display_frame)
+                    linesP, width, height)
                 point1 = self.transform_homography(self.homography, closest_line[0])
                 point2 = self.transform_homography(self.homography, closest_line[1])
 
                 # 4. Get lookahead and smooth it
                 lookahead_pt = self.determine_lookahead_point(
                     point1, point2, is_left)
-                weighted_lookahead = self.compute_weighted_lookahead(
-                    self.lookahead_pt_history, lookahead_pt)
+                weighted_lookahead = self.compute_weighted_lookahead(lookahead_pt)
 
                 # 5. Project lookahead point to image space
                 pixel_x, pixel_y = self.transform_homography(self.inv_homography, weighted_lookahead)
-                cv.circle(image, (int(round(pixel_x)), int(round(pixel_y))), radius=5, color=(0, 255, 0), thickness=-1)
-                debug_msg = self.bridge.cv2_to_imgmsg(image, "bgr8")
+                cv.circle(input_image, (int(round(pixel_x)), int(round(pixel_y))), radius=5, color=(0, 255, 0), thickness=-1)
+                debug_msg = self.bridge.cv2_to_imgmsg(input_image, "bgr8")
                 self.debug_pub.publish(debug_msg)
         except Exception as e:
-            self.get_logger().info("Error in image_callback:", e)
+            self.get_logger().info(f"Error in image_callback {e}")
 
 
     def skeletonize(self, image):
@@ -162,11 +190,11 @@ class TrackSegment(Node):
         closest_line = np.array(([closest_line[0], closest_line[1]], [closest_line[2], closest_line[3]]))
         return closest_line, is_left  # shape (2, 4)
     
-    def transform_homography(self, point):
+    def transform_homography(self, homography, point):
         u = point[0]
         v = point[1]
         homogeneous_point = np.array([[u], [v], [1]])
-        xy = np.dot(self.homography, homogeneous_point)
+        xy = np.dot(homography, homogeneous_point)
         scaling_factor = 1.0 / xy[2, 0]
         homogeneous_xy = xy * scaling_factor
         x = homogeneous_xy[0, 0]

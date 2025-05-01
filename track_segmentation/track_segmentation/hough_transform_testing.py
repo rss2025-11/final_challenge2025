@@ -242,54 +242,54 @@ def viz_midline(line, im):
     cv.waitKey()
 
 
-# video_path = "../output.mp4"
-# output_path = "test_lines.mp4"
+video_path = "../output.mp4"
+output_path = "test_lines.mp4"
 
-# cap = cv.VideoCapture(video_path)
+cap = cv.VideoCapture(video_path)
 
-# # Get video properties
-# fps = cap.get(cv.CAP_PROP_FPS)
-# width  = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-# height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+# Get video properties
+fps = cap.get(cv.CAP_PROP_FPS)
+width  = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
 
-# # Define the codec and create VideoWriter object
-# fourcc = cv.VideoWriter_fourcc(*'mp4v')  # or use 'XVID' or 'avc1'
-# out = cv.VideoWriter(output_path, fourcc, fps, (width, height))
+# Define the codec and create VideoWriter object
+fourcc = cv.VideoWriter_fourcc(*'mp4v')  # or use 'XVID' or 'avc1'
+out = cv.VideoWriter(output_path, fourcc, fps, (width, height))
 
-# homography = create_homography_matrix()
-# inv_homography = np.linalg.inv(homography)
+homography = create_homography_matrix()
+inv_homography = np.linalg.inv(homography)
 
-# while cap.isOpened():
-#     ret, frame = cap.read()
-#     if not ret:
-#         break
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-#     cdstP, linesP = edges_clean(frame)
-#     display_frame = frame.copy()
+    cdstP, linesP = edges_clean(frame)
+    display_frame = frame.copy()
 
-#     if linesP is not None:
-#         try:
-#             closest_line, is_left, image = compute_lane_edges(linesP, width, height, display_frame)
-#             point1x, point1y = transform_homography(homography, closest_line[0])
-#             point2x, point2y = transform_homography(homography, closest_line[1])
-#             lane_line = np.array(([point1x, point1y], [point2x, point2y]))
-#             lookahead_pt = determine_lookahead_point(point1x, point1y, point2x, point2y, is_left)
-#             print(lookahead_pt)
-#             weighted_lookahead = compute_weighted_lookahead(lookahead_pt_history, lookahead_pt)
-#             pixel_1x, pixel_1y = transform_homography(inv_homography, weighted_lookahead)
-#             cv.circle(image, (int(round(pixel_1x)), int(round(pixel_1y))), radius=5, color=(0, 255, 0), thickness=-1)
-#         except Exception as e:
-#             print("Error processing frame:", e)
+    if linesP is not None:
+        try:
+            closest_line, is_left, image = compute_lane_edges(linesP, width, height, display_frame)
+            point1x, point1y = transform_homography(homography, closest_line[0])
+            point2x, point2y = transform_homography(homography, closest_line[1])
+            lane_line = np.array(([point1x, point1y], [point2x, point2y]))
+            lookahead_pt = determine_lookahead_point(point1x, point1y, point2x, point2y, is_left)
+            print(lookahead_pt)
+            weighted_lookahead = compute_weighted_lookahead(lookahead_pt_history, lookahead_pt)
+            pixel_1x, pixel_1y = transform_homography(inv_homography, weighted_lookahead)
+            cv.circle(image, (int(round(pixel_1x)), int(round(pixel_1y))), radius=5, color=(0, 255, 0), thickness=-1)
+        except Exception as e:
+            print("Error processing frame:", e)
 
-#     out.write(display_frame)
-#     cv.imshow("Midline", display_frame)
+    out.write(display_frame)
+    cv.imshow("Midline", display_frame)
 
-#     if cv.waitKey(1) == 27:  # ESC to break
-#         break
+    if cv.waitKey(1) == 27:  # ESC to break
+        break
 
-# cap.release()
-# out.release()
-# cv.destroyAllWindows()
+cap.release()
+out.release()
+cv.destroyAllWindows()
 
 
 

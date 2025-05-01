@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'video_converter = track_segmentation.extract_mp4:main'
+            'video_converter = track_segmentation.extract_mp4:main',
+            'track_follower = track_segmentation.track_path:main'
         ],
     },
 )
