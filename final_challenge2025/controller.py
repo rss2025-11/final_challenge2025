@@ -83,17 +83,20 @@ class Controller:
         self.waiting_for_path = False
         
         # Start the path execution
-        self.state_machine.execute_path_timer = self.state_machine.create_timer(0.01, self.execute_path)   # TODO: parametrize the drive command freq
-        
+        if self.state_machine.execute_path_timer is None:
+            self.state_machine.execute_path_timer = self.state_machine.create_timer(0.01, self.execute_path)
+
     def execute_path(self):
         """
         Execute one step of path following
         """
         if not self.current_path_plan or self.current_path_index >= len(self.current_path_plan.poses):
-            self.state_machine.get_logger().info("Path execution complete")
             self.current_path_plan = None
             self.current_path_index = 0
-            return True  # Path execution complete
+            if self.state_machine.execute_path_timer:
+                self.state_machine.execute_path_timer.cancel()
+                self.state_machine.execute_path_timer = None
+            return True
             
         robot_pose = self.state_machine.current_pose
         if robot_pose is None:
@@ -107,28 +110,37 @@ class Controller:
             self.state_machine.get_logger().info("Reached end of path")
             self.current_path_plan = None
             self.current_path_index = 0
+            if self.state_machine.execute_path_timer:
+                self.state_machine.execute_path_timer.cancel()
+                self.state_machine.execute_path_timer = None
             return True
             
         # Publish the lookahead point
         self.publish_lookahead_point(lookahead_point)
-        return False  # Path execution not complete
+        return False
 
     def collect_banana(self, banana_location):
         """
         Collect a banana from the given location.
-        Collection involves navigating to in front of the banana and then stopping for 5 seconds.
+        Collection involves stopping for 5 seconds.
         """
-        #  TODO: might want to route to in-front of banana, not on it
-        self.follow_path(self.state_machine.current_pose, banana_location)
+        self.state_machine.get_logger().info("Collecting banana")
+        self.stop_car()
         time.sleep(5)
 
     def stop_car(self):
         """
         Stop the car by publishing a zero drive command.
         """
-        self.drive_pub.publish(
-            AckermannDriveStamped(drive=AckermannDrive(steering=0.0, acceleration=0.0, steering_angle=0.0, steering_angle_velocity=0.0))
+        drive_msg = AckermannDriveStamped()
+        drive_msg.drive = AckermannDrive(
+            speed=0.0,
+            acceleration=0.0,
+            jerk=0.0,
+            steering_angle=0.0,
+            steering_angle_velocity=0.0
         )
+        self.drive_pub.publish(drive_msg)
 
     def await_signal(self):
         """
@@ -142,13 +154,13 @@ class Controller:
         """
         Follow a path to a goal point.
         """
-        self.state_machine.get_logger().info("Requesting path plan")
-        path_request = PoseArray()
-        path_request.poses = [start_pose, end_pose]
-        
-        # Set waiting flag before publishing
-        self.waiting_for_path = True
-        self.path_request_publisher.publish(path_request)
+        # Only request a new path if we're not already following one
+        if not self.waiting_for_path and self.current_path_plan is None:
+            self.state_machine.get_logger().info("Requesting path plan")
+            path_request = PoseArray()
+            path_request.poses = [start_pose, end_pose]
+            self.waiting_for_path = True
+            self.path_request_publisher.publish(path_request)
         
     def find_lookahead_point(self):
         """

@@ -49,6 +49,7 @@ class PurePursuit(Node):
         self.speed = msg.data
 
     def lookahead_point_callback(self, msg):
+        self.viz_lookahead_point()
         self.current_lookahead_point = msg.data
         dx = self.current_lookahead_point[0]
         dy = self.current_lookahead_point[1]
@@ -68,7 +69,28 @@ class PurePursuit(Node):
         drive_cmd.drive.steering_angle = angle
         self.drive_pub.publish(drive_cmd)
 
-
+    def viz_lookahead_point(self):
+        """
+        Visualize the lookahead point.
+        """
+        marker = Marker()
+        marker.header.frame_id = "base_link"
+        marker.type = Marker.SPHERE
+        marker.pose.position.x = self.current_lookahead_point[0]
+        marker.pose.position.y = self.current_lookahead_point[1]
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = 0.0
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.1
+        marker.scale.y = 0.1
+        marker.scale.z = 0.1
+        marker.color.a = 1.0
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        self.point_follow_pub.publish(marker)
 def main(args=None):
     rclpy.init(args=args)
     follower = PurePursuit()

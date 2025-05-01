@@ -97,8 +97,15 @@ class StateMachine(Node):
             shell_points (PoseArray): Array of waypoints to visit
         """
         self.get_logger().info("Received shell points")
-        signal_pose = None  # TODO: need to hardcode
-
+        signal_pose = Pose()  # TODO: need to change for real world
+        signal_pose.position.x = -10.613014221191406
+        signal_pose.position.y = 16.343740463256836
+        signal_pose.position.z = 0.0
+        signal_pose.orientation.x = 0.0
+        signal_pose.orientation.y = 0.0
+        signal_pose.orientation.z = 0.3809232176506139
+        signal_pose.orientation.w = 0.9246066743511552
+        
         # Set up navigation points
         self.goal_points = [
             shell_points.poses[0],  # First banana region
@@ -156,11 +163,7 @@ class StateMachine(Node):
     def main_loop(self):
         """Main control loop that runs at a fixed frequency."""
         if self.current_pose is None:
-            # self.get_logger().warn("Current pose is None, waiting for pose data...")
             return
-
-        # Add debug info at start of each loop
-        # self.get_logger().info(f"Main loop - Phase: {self.current_phase}, Pointer: {self.current_pointer}, Goals: {len(self.goal_points)}")
 
         if self.current_phase == Phase.IDLE:
             if len(self.goal_points) > 0 and self.current_pointer < 0:
@@ -171,12 +174,17 @@ class StateMachine(Node):
 
         elif self.current_phase == Phase.FOLLOWING_PATH:
             if self.check_goal_condition():
-                # Execute the phase for the point we just reached
-                self.current_phase = self.goal_phases[self.current_pointer]
-                # remove the follow path timer
+                # Cancel the path execution timer
                 if self.execute_path_timer:
                     self.execute_path_timer.cancel()
-                # TODO: use controller to make robot stop
+                    self.execute_path_timer = None
+                
+                # Stop the car
+                self.controller.stop_car()
+                
+                # Then transition to next phase
+                self.current_phase = self.goal_phases[self.current_pointer]
+                self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
 
         elif self.current_phase == Phase.TRAFFIC_SIGNAL:
             if self.stop_signal is not None and not self.stop_signal:
@@ -193,10 +201,11 @@ class StateMachine(Node):
                 # Update the next point (banana collection location)
                 banana_pose = self.controller.robot_to_map_frame(self.detection)
                 self.goal_points[self.current_pointer + 1] = banana_pose
+                self.detection = None
+            
                 # Move to the next point (banana collection)
                 self.current_pointer += 1
                 self.current_phase = Phase.FOLLOWING_PATH
-                self.detection = None
                 self.follow_path_phase()
 
         elif self.current_phase == Phase.BANANA_COLLECTION:
@@ -221,20 +230,13 @@ class StateMachine(Node):
         return distance < threshold
 
     def follow_path_phase(self):
-        """Follow a path to the current goal point from current pose."""
-        if (
-            self.current_pointer < len(self.goal_points)
-            and self.current_pose is not None
-        ):
-            goal_point = self.goal_points[self.current_pointer]
-            # TODO: this might block the main phases loop/timer
-            self.get_logger().info(f"Following path to {self.goal_phases[self.current_pointer]}")
-            self.controller.follow_path(
-                self.current_pose,
-                goal_point,
-            )
-        else:
-            self.get_logger().info("Reached end of path or current pose is None")
+        """Follow a path to the current goal point."""
+        if self.current_pointer >= len(self.goal_points) or self.goal_points[self.current_pointer] is None:
+            self.get_logger().warn("Invalid goal point, skipping path following")
+            return
+            
+        self.get_logger().info(f"Following path to {self.goal_phases[self.current_pointer]}")
+        self.controller.follow_path(self.current_pose, self.goal_points[self.current_pointer])
 
 
 def main(args=None):
