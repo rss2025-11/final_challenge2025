@@ -14,4 +14,5 @@
     <node pkg="final_challenge2025" exec="pure_pursuit" name="pure_pursuit" output="screen">
         <param from="$(find-pkg-share final_challenge2025)/config/real/config.yaml"/>
     </node>
+    <node pkg="final_challenge2025" exec="detection_node" name="detection_node" output="screen"> </node>
 </launch>
