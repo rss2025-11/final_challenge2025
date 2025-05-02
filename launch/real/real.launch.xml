@@ -1,7 +1,4 @@
 <launch>
-    <node pkg="safety_controller" exec="safety_controller" name="safety_controller" output="screen">
-        <param from="$(find-pkg-share safety_controller)/config/config.yaml"/>
-    </node>
     <node pkg="final_challenge2025" exec="state_machine" name="state_machine" output="screen">
         <param from="$(find-pkg-share final_challenge2025)/config/real/config.yaml"/>
     </node>
