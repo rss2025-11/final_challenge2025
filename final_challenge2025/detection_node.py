@@ -5,7 +5,7 @@ from cv_bridge import CvBridge
 
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Pose
-from .detector import Detector
+from .model.detector import Detector
 from std_msgs.msg import String, Bool
 import cv2 as cv
 import numpy as np
