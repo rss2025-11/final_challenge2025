@@ -6,4 +6,5 @@
         <param from="$(find-pkg-share final_challenge2025)/config/real/config.yaml"/>
     </node>
     <node pkg="final_challenge2025" exec="detector" name="detector" output="screen"> </node>
+    <node pkg="final_challenge2025" exec="basement_point_publisher" name="basement_point_publisher" output="screen"> </node>
 </launch>
