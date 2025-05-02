@@ -10,6 +10,8 @@ from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import PoseArray
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Point #geometry_msgs not in CMake file
+from std_msgs.msg import Float32
+from std_msgs.msg import Float32MultiArray
 
 class TrackSegment(Node):
     """
@@ -24,6 +26,8 @@ class TrackSegment(Node):
         self.image_sub = self.create_subscription(Image, "/zed/zed_node/rgb/image_rect_color", self.image_callback, 5)
         self.bridge = CvBridge() # Converts between ROS images and OpenCV Images
         self.debug_pub = self.create_publisher(Image, "/debug_img", 10)
+        self.speed_pub = self.create_publisher(Float32, "/speed", 10)
+        self.lookahead_pub = self.create_publisher(Float32MultiArray, "/lookahead_point", 10)
         self.bridge = CvBridge()
         self.homography = self.create_homography_matrix()
         self.inv_homography = np.linalg.inv(self.homography)
@@ -85,8 +89,17 @@ class TrackSegment(Node):
                 # 5. Project lookahead point to image space
                 pixel_x, pixel_y = self.transform_homography(self.inv_homography, weighted_lookahead)
                 cv.circle(input_image, (int(round(pixel_x)), int(round(pixel_y))), radius=5, color=(0, 255, 0), thickness=-1)
+                if closest_line is not None:
+                    cv.line(input_image, (closest_line[0][0], closest_line[0][1]), (closest_line[1][0], closest_line[1][1]), (255,0,255), 2, cv.LINE_AA)
+    
                 debug_msg = self.bridge.cv2_to_imgmsg(input_image, "bgr8")
                 self.debug_pub.publish(debug_msg)
+                speed = Float32()
+                speed.data = 2.0
+                self.speed_pub.publish(speed)
+                lookahead_msg = Float32MultiArray()
+                lookahead_msg.data = weighted_lookahead.tolist()
+                self.lookahead_pub.publish(lookahead_msg)
         except Exception as e:
             self.get_logger().info(f"Error in image_callback {e}")
 
@@ -108,7 +121,7 @@ class TrackSegment(Node):
         hsv = cv.cvtColor(image, cv.COLOR_BGR2HSV)
         # Define white color range in HSV
         lower_white = np.array([0, 0, 150], dtype=np.uint8)
-        upper_white = np.array([180, 25, 255], dtype=np.uint8)
+        upper_white = np.array([180, 10, 255], dtype=np.uint8)
         # Create mask for white color
         hsv[:np.shape(hsv)[0]//3,:] = 255
         mask_initial = cv.inRange(hsv, lower_white, upper_white)
@@ -116,7 +129,7 @@ class TrackSegment(Node):
 
         # Apply erosion to thin thick lines slightly
         kernel = cv.getStructuringElement(cv.MORPH_RECT, (1, 1))
-        thinned_mask = self.skeletonize(mask)
+        thinned_mask = mask#.skeletonize(mask)
 
         # Convert to BGR for visualization
         linesP = cv.HoughLinesP(thinned_mask, 1, np.pi / 180, 50, None, 100, 20) # TODO: Tune these numbers if needed
@@ -164,7 +177,7 @@ class TrackSegment(Node):
 
         slope = np.divide(dy, dx)
 
-        vertical_enough_mask = (abs(slope) > 0.2)
+        vertical_enough_mask = (abs(slope) > 0.3)
 
         lines = lines[vertical_enough_mask]
         dx = dx[vertical_enough_mask]
@@ -188,6 +201,7 @@ class TrackSegment(Node):
 
         closest_line = lines[max_index]
         closest_line = np.array(([closest_line[0], closest_line[1]], [closest_line[2], closest_line[3]]))
+
         return closest_line, is_left  # shape (2, 4)
     
     def transform_homography(self, homography, point):
@@ -213,7 +227,7 @@ class TrackSegment(Node):
         if is_left:
             offset = -0.25
         else:
-            offset = 0.25
+            offset = 0.3
         lookahead_point = [self.lookahead_dist, y_intercept + offset]
         return lookahead_point
 
@@ -221,9 +235,13 @@ class TrackSegment(Node):
 
         # TODO: if the most recently computed point is very far from the rest, don't use the raw calculation
 
+        if np.linalg.norm(new_lookahead_point - self.lookahead_pt_history[0]) < 0.3:
+            newest_point = new_lookahead_point
+        else:
+            newest_point = self.lookahead_pt_history[0]
+        
         self.lookahead_pt_history = np.roll(self.lookahead_pt_history, 1, axis=0)
-        self.lookahead_pt_history[0] = new_lookahead_point
-
+        self.lookahead_pt_history[0] = newest_point
         weights = np.ones(20) * (0.4 / 17)  # Remaining 17 entries share 0.4
         weights[0] = 0.3  # Newest
         weights[1] = 0.2  # 2nd newest
@@ -234,6 +252,6 @@ class TrackSegment(Node):
     
 def main(args=None):
     rclpy.init(args=args)
-    cone_detector = TrackSegment()
-    rclpy.spin(cone_detector)
+    track_segmentor = TrackSegment()
+    rclpy.spin(track_segmentor)
     rclpy.shutdown()
