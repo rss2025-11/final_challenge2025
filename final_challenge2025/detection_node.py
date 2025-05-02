@@ -42,7 +42,6 @@ class DetectorNode(Node):
         traffic_light_found = False
         
         for detection in predictions:
-            print(detection[1])
             if not banana_found and detection[1] == "banana":
                 banana_img_pos = detection[0]
             elif detection[1] == "traffic light":
@@ -50,7 +49,6 @@ class DetectorNode(Node):
                     traffic_light_img_pos = detection[0]
                 elif not traffic_light_found:
                     traffic_light_found = True
-                    print(detection[0])
                     traffic_light_img_pos = detection[0]
 
         #Check detected to publish
