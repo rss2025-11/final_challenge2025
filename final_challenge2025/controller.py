@@ -176,7 +176,8 @@ class Controller:
         if self.current_path_index >= len(self.current_path_plan.poses) - 1:
             return None
 
-        # Get next waypoint
+        # Get current and next waypoint
+        current_waypoint = self.current_path_plan.poses[self.current_path_index]
         next_waypoint = self.current_path_plan.poses[self.current_path_index + 1]
 
         # Robot position in map frame
@@ -184,26 +185,26 @@ class Controller:
         robot_y = self.state_machine.current_pose.position.y
 
         # Check if we've reached the current waypoint
-        dx = next_waypoint.position.x - robot_x
-        dy = next_waypoint.position.y - robot_y
-        dist_to_next = np.sqrt(dx * dx + dy * dy)
+        dx = current_waypoint.position.x - robot_x
+        dy = current_waypoint.position.y - robot_y
+        dist_to_current = np.sqrt(dx * dx + dy * dy)
 
-        if dist_to_next < self.lookahead_distance * 0.5:
+        if (
+            dist_to_current < self.lookahead_distance * 0.5
+        ):  # TODO: multiply by 0.5 is arbitrary
             # Move to next waypoint
             self.current_path_index += 1
             if self.current_path_index >= len(self.current_path_plan.poses) - 1:
                 return self.current_path_plan.poses[-1]  # Return final waypoint
 
-            # Update next waypoint
+            # Update current and next waypoint
+            current_waypoint = self.current_path_plan.poses[self.current_path_index]
             next_waypoint = self.current_path_plan.poses[self.current_path_index + 1]
-            dx = next_waypoint.position.x - robot_x
-            dy = next_waypoint.position.y - robot_y
-            dist_to_next = np.sqrt(dx * dx + dy * dy)
 
-        # Calculate vector from robot position to next waypoint
-        segment_x = dx  # Next waypoint x - robot x
-        segment_y = dy  # Next waypoint y - robot y
-        segment_length = dist_to_next
+        # Calculate vector from current to next waypoint
+        segment_x = next_waypoint.position.x - current_waypoint.position.x
+        segment_y = next_waypoint.position.y - current_waypoint.position.y
+        segment_length = np.sqrt(segment_x * segment_x + segment_y * segment_y)
 
         if segment_length < 1e-6:
             return next_waypoint  # Return next waypoint if segment is too short
@@ -212,15 +213,52 @@ class Controller:
         segment_x /= segment_length
         segment_y /= segment_length
 
-        # For simplicity, always set lookahead point along the direct path to the next waypoint
-        # at the lookahead distance or the distance to the next waypoint, whichever is smaller
-        lookahead_dist = min(self.lookahead_distance, dist_to_next)
-        
-        # Calculate lookahead point
-        lookahead_x = robot_x + segment_x * lookahead_dist
-        lookahead_y = robot_y + segment_y * lookahead_dist
+        # Vector from robot to start of segment
+        dx = current_waypoint.position.x - robot_x
+        dy = current_waypoint.position.y - robot_y
 
-        # Create the lookahead point with orientation pointing toward the next waypoint
+        # Calculate closest point on line segment to robot
+        proj_length = dx * segment_x + dy * segment_y
+        closest_x = current_waypoint.position.x - proj_length * segment_x
+        closest_y = current_waypoint.position.y - proj_length * segment_y
+
+        # Distance from robot to closest point on line
+        dx = closest_x - robot_x
+        dy = closest_y - robot_y
+        lateral_dist = np.sqrt(dx * dx + dy * dy)
+
+        # If robot is far from path, project lookahead distance along line
+        if lateral_dist > self.lookahead_distance:
+            # Just move along the segment
+            lookahead_x = closest_x + segment_x * self.lookahead_distance
+            lookahead_y = closest_y + segment_y * self.lookahead_distance
+        else:
+            # Calculate coefficients for quadratic equation
+            a = 1.0  # Since segment vector is normalized
+            b = 2.0 * (segment_x * dx + segment_y * dy)
+            c = dx * dx + dy * dy - self.lookahead_distance * self.lookahead_distance
+
+            # Calculate discriminant
+            discriminant = b * b - 4 * a * c
+
+            # Calculate intersection points
+            t1 = (-b + np.sqrt(discriminant)) / (2.0 * a)
+            t2 = (-b - np.sqrt(discriminant)) / (2.0 * a)
+
+            # Choose the intersection that is ahead of us (positive t)
+            t = max(0.0, min(t1, t2))
+            if t1 >= 0 and t2 >= 0:
+                t = min(t1, t2)
+            elif t1 >= 0:
+                t = t1
+            elif t2 >= 0:
+                t = t2
+
+            # Calculate lookahead point
+            lookahead_x = closest_x + t * segment_x
+            lookahead_y = closest_y + t * segment_y
+
+        # Create the lookahead point with orientation from the segment
         lookahead_point = Pose()
         lookahead_point.position.x = lookahead_x
         lookahead_point.position.y = lookahead_y
