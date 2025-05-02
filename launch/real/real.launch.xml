@@ -1,12 +1,6 @@
 <launch>
-    <node pkg="path_planning" exec="trajectory_planner" name="trajectory_planner" output="screen">
-        <param from="$(find-pkg-share path_planning)/config/config.yaml"/>
-    </node>
     <node pkg="safety_controller" exec="safety_controller" name="safety_controller" output="screen">
         <param from="$(find-pkg-share safety_controller)/config/config.yaml"/>
-    </node>
-    <node pkg="localization" exec="particle_filter" name="particle_filter" output="screen">
-        <param from="$(find-pkg-share localization)/config/real/pf_config.yaml"/>
     </node>
     <node pkg="final_challenge2025" exec="state_machine" name="state_machine" output="screen">
         <param from="$(find-pkg-share final_challenge2025)/config/real/config.yaml"/>

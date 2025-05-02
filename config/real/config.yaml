@@ -1,10 +1,9 @@
 state_machine:
   ros__parameters:
     odom_topic: "/pf/pose/odom"
-    initial_pose_topic: "/initialpose"
-    drive_topic: "/high_mux/ackermann_drive"
-    banana_detection_topic: "/banana_detection"
-    signal_detection_topic: "/signal_detection"
+    drive_topic: "/vesc/high_level/input/nav_0"
+    banana_detection_topic: "/detections/banana"
+    signal_detection_topic: "/detections/traffic_light"
     shell_points_topic: "/shell_points"
     main_loop_rate: 60.0
     lookahead_distance: 0.5
@@ -13,4 +12,4 @@ state_machine:
     planned_path_topic: "/planned_path"
 pure_pursuit:
   ros__parameters:
-    drive_topic: "/drive"
+    drive_topic: "/vesc/high_level/input/nav_1"
