@@ -30,7 +30,7 @@ setup(
             'state_machine = final_challenge2025.state_machine:main',
             'pure_pursuit = final_challenge2025.pure_pursuit:main',
             'basement_point_publisher = final_challenge2025.basement_point_publisher:main',
-            'detector = final_challenge2025.model.detection_node:main',
+            'detector = final_challenge2025.detection_node:main',
         ],
     },
 )
