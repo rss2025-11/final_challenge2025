@@ -6,6 +6,7 @@ from std_msgs.msg import Float32MultiArray
 from ackermann_msgs.msg import AckermannDriveStamped, AckermannDrive
 import time
 
+from final_challenge2025.utils import map_to_robot_frame
 
 class Controller:
     def __init__(self, ros_node):
@@ -242,99 +243,9 @@ class Controller:
             robot_pose: Current robot pose in map frame
             lookahead_point: Lookahead point in map frame
         """
-        lookahead_point_robot = self.map_to_robot_frame(lookahead_point)
+        lookahead_point_robot = map_to_robot_frame(lookahead_point, self.state_machine.current_pose)
 
         # Publish the lookahead point in robot frame
         msg = Float32MultiArray()
         msg.data = lookahead_point_robot
         self.lookahead_point_publisher.publish(msg)
-
-    def map_to_robot_frame(self, pose):
-        """
-        Transform pose from map frame to robot frame.
-
-        Args:
-            pose: Pose in map frame
-
-        Returns:
-            [x, y, theta] in robot frame
-        """
-        # Get robot position and orientation
-        robot_x = self.state_machine.current_pose.position.x
-        robot_y = self.state_machine.current_pose.position.y
-        q = self.state_machine.current_pose.orientation
-        quaternion = [q.x, q.y, q.z, q.w]
-        _, _, robot_theta = tf_transformations.euler_from_quaternion(quaternion)
-
-        # Calculate relative position (map frame to robot frame)
-        dx = pose.position.x - robot_x
-        dy = pose.position.y - robot_y
-
-        # Rotate to robot frame
-        cos_theta = np.cos(-robot_theta)
-        sin_theta = np.sin(-robot_theta)
-
-        # Transform to robot frame
-        x_robot = dx * cos_theta - dy * sin_theta
-        y_robot = dx * sin_theta + dy * cos_theta
-
-        # Get lookahead point orientation in robot frame
-        q = pose.orientation
-        quaternion = [q.x, q.y, q.z, q.w]
-        _, _, lookahead_theta = tf_transformations.euler_from_quaternion(quaternion)
-        theta_robot = lookahead_theta - robot_theta
-
-        # Normalize angle
-        theta_robot = np.arctan2(np.sin(theta_robot), np.cos(theta_robot))
-
-        return [x_robot, y_robot, theta_robot]
-
-    def robot_to_map_frame(self, position) -> Pose:
-        """
-        Transform position from robot frame to map frame.
-
-        Args:
-            position: Position in robot frame, [x, y, theta]
-
-        Returns:
-            Pose in map frame
-        """
-        # Get robot position and orientation
-        robot_x = self.state_machine.current_pose.position.x
-        robot_y = self.state_machine.current_pose.position.y
-        q = self.state_machine.current_pose.orientation
-        quaternion = [q.x, q.y, q.z, q.w]
-        _, _, robot_theta = tf_transformations.euler_from_quaternion(quaternion)
-
-        # Extract robot frame coordinates
-        x_robot = position[0]
-        y_robot = position[1]
-        theta_robot = position[2]
-
-        # Rotate by positive robot_theta (inverse of negative rotation)
-        cos_theta = np.cos(robot_theta)
-        sin_theta = np.sin(robot_theta)
-
-        # Transform to map frame (inverse of robot frame transformation)
-        x_map = x_robot * cos_theta - y_robot * sin_theta + robot_x
-        y_map = x_robot * sin_theta + y_robot * cos_theta + robot_y
-
-        # Add robot orientation to get map frame orientation
-        theta_map = theta_robot + robot_theta
-
-        # Normalize angle
-        theta_map = np.arctan2(np.sin(theta_map), np.cos(theta_map))
-
-        # Create pose in map frame
-        pose = Pose()
-        pose.position.x = x_map
-        pose.position.y = y_map
-
-        # Convert theta to quaternion
-        q = tf_transformations.quaternion_from_euler(0, 0, theta_map)
-        pose.orientation.x = q[0]
-        pose.orientation.y = q[1]
-        pose.orientation.z = q[2]
-        pose.orientation.w = q[3]
-
-        return pose

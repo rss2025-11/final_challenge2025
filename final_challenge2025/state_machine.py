@@ -7,6 +7,7 @@ from std_msgs.msg import Bool, Float32MultiArray
 from nav_msgs.msg import Odometry
 
 from final_challenge2025.controller import Controller
+from final_challenge2025.utils import SIGNAL_MAP_POSE, robot_to_map_frame
 
 from enum import Enum
 
@@ -33,8 +34,8 @@ class StateMachine(Node):
 
     def __init__(self):
         super().__init__("state_machine")
-        self.declare_parameter("banana_detection_topic", "/banana_detection")
-        self.declare_parameter("signal_detection_topic", "/signal_detection")
+        self.declare_parameter("banana_detection_topic", "/detections/banana")
+        self.declare_parameter("signal_detection_topic", "/detections/traffic_light")
         self.declare_parameter("shell_points_topic", "/shell_points")
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("main_loop_rate", 60.0)  # Hz
@@ -97,24 +98,16 @@ class StateMachine(Node):
             shell_points (PoseArray): Array of waypoints to visit
         """
         self.get_logger().info("Received shell points")
-        signal_pose = Pose()  # TODO: need to change for real world
-        signal_pose.position.x = -10.613014221191406
-        signal_pose.position.y = 16.343740463256836
-        signal_pose.position.z = 0.0
-        signal_pose.orientation.x = 0.0
-        signal_pose.orientation.y = 0.0
-        signal_pose.orientation.z = 0.3809232176506139
-        signal_pose.orientation.w = 0.9246066743511552
         
         # Set up navigation points
         self.goal_points = [
             shell_points.poses[0],  # First banana region
             None,  # Placeholder for first banana location (will be updated)
-            signal_pose,  # Signal location
+            SIGNAL_MAP_POSE,  # Signal location
             shell_points.poses[1],  # Second banana region
             None,  # Placeholder for second banana location
-            signal_pose,  # Signal location
-            None,  # End location
+            SIGNAL_MAP_POSE,  # Signal location
+            self.current_pose,  # End location
         ]
 
         # Set up phases for each point
@@ -199,7 +192,7 @@ class StateMachine(Node):
         elif self.current_phase == Phase.BANANA_DETECTION:
             if self.detection is not None:
                 # Update the next point (banana collection location)
-                banana_pose = self.controller.robot_to_map_frame(self.detection)
+                banana_pose = robot_to_map_frame(self.detection, self.current_pose)
                 self.goal_points[self.current_pointer + 1] = banana_pose
                 self.detection = None
             

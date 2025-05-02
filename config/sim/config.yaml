@@ -2,8 +2,8 @@ state_machine:
   ros__parameters:
     odom_topic: "/odom"
     drive_topic: "/drive"
-    banana_detection_topic: "/banana_detection"
-    signal_detection_topic: "/signal_detection"
+    banana_detection_topic: "/detections/banana"
+    signal_detection_topic: "/detections/traffic_light"
     shell_points_topic: "/shell_points"
     main_loop_rate: 60.0
     lookahead_distance: 0.5
