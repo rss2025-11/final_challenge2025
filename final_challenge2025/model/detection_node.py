@@ -5,10 +5,12 @@ from cv_bridge import CvBridge
 
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Pose
-from .model.detector import Detector
+from .detector import Detector
 from std_msgs.msg import String, Bool
 import cv2 as cv
 import numpy as np
+
+
 
 class DetectorNode(Node):
     def __init__(self):
@@ -76,8 +78,8 @@ class DetectorNode(Node):
         if traffic_light_img_pos is None:
              traffic_state_to_pub.data = False #"Go"
         else:
-            # # traffic_state_to_pub.data = traffic_light_checker(image, traffic_light_img_pos)
-            # cv.rectangle(image, (int(traffic_light_img_pos[0]),int(traffic_light_img_pos[1])), (int(traffic_light_img_pos[2]), int(traffic_light_img_pos[3])),(0,0,255), 3) #Gets traffic light
+            # traffic_state_to_pub.data = traffic_light_checker(image, traffic_light_img_pos)
+            cv.rectangle(image, (int(traffic_light_img_pos[0]),int(traffic_light_img_pos[1])), (int(traffic_light_img_pos[2]), int(traffic_light_img_pos[3])),(0,0,255), 3) #Gets traffic light
             
             # check_red = True
             # red_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
