@@ -68,6 +68,12 @@ class StateMachine(Node):
         self.location_subscriber = self.create_subscription(
             Odometry, self.odom_topic, self.location_callback, 1
         )
+        # self.reached_end_subscriber = self.create_subscription(
+        #     Bool, "/reached_end", self.reached_end_callback, 1
+        # )
+        self.reached_end_subscriber = self.create_subscription(
+            Float32MultiArray, "/reached_end", self.reached_end_callback, 1
+        )
 
         # state vars
         self.goal_points = []  # Navigation waypoints
@@ -79,6 +85,8 @@ class StateMachine(Node):
         self.detection = None
         self.stop_signal = None
         self.current_path_plan = None
+        self.reached_end = False
+        self.previous_data = None
 
         # Timers
         self.main_loop_timer = self.create_timer(
@@ -89,6 +97,19 @@ class StateMachine(Node):
         self.controller = Controller(self)
 
         self.get_logger().info("State Machine Initialized")
+
+    def reached_end_callback(self, reached_end_msg):
+        # if self.previous_data is None:
+        #     self.previous_data = reached_end_msg.data
+        #     return True
+        
+        # dx = reached_end_msg.data[0]- self.previous_data[0]
+        # dy = reached_end_msg.data[1] - self.previous_data[1]
+        # distance = (dx**2 + dy**2) ** 0.5
+
+        self.reached_end = not (reached_end_msg.data == self.previous_data) # not (distance < 0.1)
+        self.previous_data = reached_end_msg.data
+        # self.received_reached_end = True
 
     def shell_points_callback(self, shell_points: PoseArray):
         """
@@ -155,6 +176,7 @@ class StateMachine(Node):
 
     def main_loop(self):
         """Main control loop that runs at a fixed frequency."""
+        # self.get_logger().info(f"{self.reached_end}")
         if self.current_pose is None:
             return
 
@@ -179,6 +201,7 @@ class StateMachine(Node):
                 # Then transition to next phase
                 self.current_phase = self.goal_phases[self.current_pointer]
                 self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
+                # self.reached_end = False
 
         elif self.current_phase == Phase.TRAFFIC_SIGNAL:
             if self.stop_signal is not None and not self.stop_signal:
@@ -220,17 +243,28 @@ class StateMachine(Node):
 
     def check_goal_condition(self, threshold: float = 0.6):
         """Check if we've reached the current goal."""
-        if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
-            return False
+        return self.reached_end
+    
+        # if not self.reached_end:
+        #     return False
+        
+        # dx = self.current_pose.position.x - self.reached_end[0]
+        # dy = self.current_pose.position.y - self.reached_end[1]
+        # distance = (dx**2 + dy**2) ** 0.5
+        
+        # return  distance < threshold
 
-        current_goal_point = self.goal_points[self.current_pointer]
+        # if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
+        #     return False
 
-        # Calculate distance to goal (simple Euclidean distance for now)
-        dx = self.current_pose.position.x - current_goal_point.position.x
-        dy = self.current_pose.position.y - current_goal_point.position.y
-        distance = (dx**2 + dy**2) ** 0.5
+        # current_goal_point = self.goal_points[self.current_pointer]
 
-        return distance < threshold
+        # # Calculate distance to goal (simple Euclidean distance for now)
+        # dx = self.current_pose.position.x - current_goal_point.position.x
+        # dy = self.current_pose.position.y - current_goal_point.position.y
+        # distance = (dx**2 + dy**2) ** 0.5
+
+        # return distance < threshold
 
     def follow_path_phase(self):
         """Follow a path to the current goal point."""
