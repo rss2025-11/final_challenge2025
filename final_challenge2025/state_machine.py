@@ -167,13 +167,14 @@ class StateMachine(Node):
 
         elif self.current_phase == Phase.FOLLOWING_PATH:
             if self.check_goal_condition():
+
                 # Cancel the path execution timer
-                if self.execute_path_timer:
-                    self.execute_path_timer.cancel()
-                    self.execute_path_timer = None
+                # if self.execute_path_timer:
+                #     self.execute_path_timer.cancel()
+                #     self.execute_path_timer = None
                 
                 # Stop the car
-                self.controller.stop_car()
+                # self.controller.stop_car()
                 
                 # Then transition to next phase
                 self.current_phase = self.goal_phases[self.current_pointer]
@@ -200,15 +201,24 @@ class StateMachine(Node):
                 self.current_pointer += 1
                 self.current_phase = Phase.FOLLOWING_PATH
                 self.follow_path_phase()
+            else:
+                # FOR SIM ONLY
+                banana_postion = [0.025, 0.025, 0]
+                banana_pose = robot_to_map_frame(banana_postion, self.current_pose)
+                self.goal_points[self.current_pointer + 1] = banana_pose
+                # Move to the next point (banana collection)
+                self.current_pointer += 1
+                self.current_phase = Phase.FOLLOWING_PATH
+                self.follow_path_phase()
 
         elif self.current_phase == Phase.BANANA_COLLECTION:
             # Collect banana and move to next point
-            self.controller.collect_banana(self.current_pose)
+            self.controller.collect_banana()
             self.current_pointer += 1
             self.current_phase = Phase.FOLLOWING_PATH
             self.follow_path_phase()
 
-    def check_goal_condition(self, threshold: float = 0.5):
+    def check_goal_condition(self, threshold: float = 0.6):
         """Check if we've reached the current goal."""
         if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
             return False
