@@ -107,12 +107,27 @@ class Controller:
         time.sleep(5)
         # TODO: take a picture from the detector
         backup_cmd = AckermannDriveStamped()
-        backup_cmd.header.stamp = self.get_clock().now().to_msg()
+        backup_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
         backup_cmd.drive.steering_angle = 0.0
         backup_cmd.drive.speed = -1.0      
         self.drive_pub.publish(backup_cmd)
         time.sleep(1)
         self.stop_car()
+
+    def sweep_banana(self):
+        backup_cmd = AckermannDriveStamped()
+        backup_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
+        backup_cmd.drive.steering_angle = -np.pi/6
+        backup_cmd.drive.speed = -1.0      
+        self.drive_pub.publish(backup_cmd)
+        time.sleep(1)
+        turn_cmd = AckermannDriveStamped()
+        turn_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
+        turn_cmd.drive.steering_angle = np.pi/6
+        turn_cmd.drive.speed = 1.0
+        self.drive_pub.publish(turn_cmd)
+        self.stop_car()
+
 
     def stop_car(self):
         """

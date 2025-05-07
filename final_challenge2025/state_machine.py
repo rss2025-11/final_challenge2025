@@ -129,7 +129,7 @@ class StateMachine(Node):
         # Set up navigation points
         self.goal_points = [
             shell_points.poses[0],  # First banana region
-            # None,  # Placeholder for first banana location (will be updated)
+            None,  # Placeholder for first banana location (will be updated)
             SIGNAL_MAP_POSE,  # Signal location
             shell_points.poses[1],  # Second banana region
             None,  # Placeholder for second banana location
@@ -139,8 +139,8 @@ class StateMachine(Node):
 
         # Set up phases for each point
         self.goal_phases = [
-            # Phase.BANANA_DETECTION,
-            # Phase.BANANA_COLLECTION,
+            Phase.BANANA_DETECTION,
+            Phase.BANANA_COLLECTION,
             Phase.TRAFFIC_SIGNAL,
             Phase.BANANA_DETECTION,
             Phase.BANANA_COLLECTION,
@@ -197,6 +197,10 @@ class StateMachine(Node):
             if self.check_goal_condition():                
                 # Then transition to next phase
                 self.current_phase = self.goal_phases[self.current_pointer]
+                exit_msg = Bool()
+                exit_msg.data = True
+                self.exit_pub.publish(exit_msg)
+                self.controller.stop_car()
                 self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
                 self.reached_end = False
 
@@ -229,13 +233,17 @@ class StateMachine(Node):
                 self.current_pointer += 1
                 self.current_phase = Phase.BANANA_PARKING
                 self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
-                exit_msg = Bool()
-                exit_msg.data = True
-                self.exit_pub.publish(exit_msg)
+                # exit_msg = Bool()
+                # exit_msg.data = True
+                # self.exit_pub.publish(exit_msg)
+                self.controller.stop_car()
 
             # sweep until we detect the banana
-            # else:
+            else:
                 # TODO: NEED SWEEPING LOGIC
+                self.get_logger().info("Entering banana sweep")
+                self.controller.sweep_banana()
+                self.get_logger().info("Finished banana sweep")
 
 
         elif self.current_phase == Phase.BANANA_PARKING:
@@ -319,7 +327,7 @@ class StateMachine(Node):
 
     def check_goal_condition(self, threshold: float = 0.6):
         """Check if we've reached the current goal."""
-        return self.reached_end
+        # return self.reached_end
 
         # dx = self.current_pose.position.x - self.reached_end[0]
         # dy = self.current_pose.position.y - self.reached_end[1]
@@ -327,17 +335,17 @@ class StateMachine(Node):
         
         # return  distance < threshold
 
-        # if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
-        #     return False
+        if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
+            return False
 
-        # current_goal_point = self.goal_points[self.current_pointer]
+        current_goal_point = self.goal_points[self.current_pointer]
 
-        # # Calculate distance to goal (simple Euclidean distance for now)
-        # dx = self.current_pose.position.x - current_goal_point.position.x
-        # dy = self.current_pose.position.y - current_goal_point.position.y
-        # distance = (dx**2 + dy**2) ** 0.5
+        # Calculate distance to goal (simple Euclidean distance for now)
+        dx = self.current_pose.position.x - current_goal_point.position.x
+        dy = self.current_pose.position.y - current_goal_point.position.y
+        distance = (dx**2 + dy**2) ** 0.5
 
-        # return distance < threshold
+        return distance < threshold
 
     def check_parking_condition(self, threshold: float = 0.6):
         return self.parked
