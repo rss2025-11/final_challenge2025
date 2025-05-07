@@ -9,6 +9,7 @@ from .detector import Detector
 from std_msgs.msg import String, Bool, Float32MultiArray
 import cv2 as cv
 import numpy as np
+import os
 
 class DetectorNode(Node):
     def __init__(self):
@@ -19,11 +20,14 @@ class DetectorNode(Node):
 
         self.traffic_light_publisher = self.create_publisher(Bool, "/detections/traffic_light", 1)
         self.subscriber = self.create_subscription(Image, "/zed/zed_node/rgb/image_rect_color", self.callback, 1)
+        self.subscriber = self.create_subscription(Bool, "/banana_save_img", self.recieve_save_rqst, 1)
         self.debug_pub = self.create_publisher(Image, "/debug_img", 10)
         self.tl_debug_pub = self.create_publisher(Image, "/tl_debug_img", 10)
         self.bridge = CvBridge()
         self.threshold = 0.3
         self.homography = self.create_homography_matrix()
+        self.banana_counter = 0
+        self.save_rqsts = 0
 
 
         self.get_logger().info("Detector Initialized")
@@ -75,6 +79,10 @@ class DetectorNode(Node):
 
             #Highlights banana in image
             cv.rectangle(image, (int(banana_img_pos[0]), int(banana_img_pos[1])), (int(banana_img_pos[2]), int(banana_img_pos[3])), (0,0,255), 5)
+
+            if(self.save_rqsts > 0):
+                self.save_rqsts -= 1
+                self.save_img(image)
 
             # Converting pixel coordinates to real world coordinates
             point = np.array([banana_box_base_x, banana_box_base_y])
@@ -212,6 +220,16 @@ class DetectorNode(Node):
 # 	cv.imshow("image", img)
 # 	cv.waitKey(0)
 # 	cv.destroyAllWindows()
+    def recieve_save_rqst(self, msg):
+        if(msg.data):
+            self.save_rqsts += 1
+
+    def save_img(self, img):
+        save_path = f"{os.path.dirname(__file__)}/banana_{self.banana_counter}.png"
+        # img.save(save_path)
+        # self.get_logger().info(f"Saved banana {self.banana_counter} to {save_path}!")
+        cv.imwrite(save_path, img)
+        self.banana_counter += 1
 
 def fc_TL_color_segmentation(img, template):
 	"""

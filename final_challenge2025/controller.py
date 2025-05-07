@@ -2,7 +2,7 @@ import tf_transformations
 import numpy as np
 
 from geometry_msgs.msg import PoseArray, Pose
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Bool
 from ackermann_msgs.msg import AckermannDriveStamped, AckermannDrive
 import time
 
@@ -12,6 +12,8 @@ class Controller:
     def __init__(self, ros_node):
         self.state_machine = ros_node
         self.banana_parking_controller = ros_node
+
+        self.sign_state = -1.0
 
         # self.state_machine.declare_parameter("lookahead_distance", 0.5)
         self.state_machine.declare_parameter("path_request_topic", "/path_request")
@@ -40,6 +42,10 @@ class Controller:
         )
         self.banana_parking_publisher = self.state_machine.create_publisher(
             Float32MultiArray, "/relative_banana_px", 1
+        )
+
+        self.banana_save_publisher = self.state_machine.create_publisher(
+            Bool, "/banana_save_img", 1
         )
 
         self.drive_pub = self.state_machine.create_publisher(
@@ -104,28 +110,44 @@ class Controller:
         """
         self.state_machine.get_logger().info("Collecting banana")
         self.stop_car()
-        time.sleep(5)
         # TODO: take a picture from the detector
+        banana_sv_img = Bool()
+        banana_sv_img.data = True
+        self.banana_save_publisher.publish(banana_sv_img)
+        time.sleep(5)
         backup_cmd = AckermannDriveStamped()
         backup_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
         backup_cmd.drive.steering_angle = 0.0
         backup_cmd.drive.speed = -1.0      
         self.drive_pub.publish(backup_cmd)
-        time.sleep(1)
+        time.sleep(2)
         self.stop_car()
 
     def sweep_banana(self):
+        # backup_cmd = AckermannDriveStamped()
+        # backup_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
+        # backup_cmd.drive.steering_angle = -np.pi/6
+        # backup_cmd.drive.speed = -1.0      
+        # self.drive_pub.publish(backup_cmd)
+        # # self.state_machine.get_logger().info(f'INITIAL CONTROL 1{backup_cmd.drive.steering_angle, backup_cmd.drive.speed}')
+        # time.sleep(1)
+        # turn_cmd = AckermannDriveStamped()
+        # turn_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
+        # turn_cmd.drive.steering_angle = np.pi/6
+        # turn_cmd.drive.speed = 1.0
+        # self.drive_pub.publish(turn_cmd)
+        # # self.state_machine.get_logger().info(f'INITIAL CONTROL 2{turn_cmd.drive.steering_angle, turn_cmd.drive.speed}')
+        # time.sleep(1)
+
         backup_cmd = AckermannDriveStamped()
         backup_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
-        backup_cmd.drive.steering_angle = -np.pi/6
-        backup_cmd.drive.speed = -1.0      
+        backup_cmd.drive.steering_angle = np.pi/6 * self.sign_state
+        backup_cmd.drive.speed = 1.0 * self.sign_state
         self.drive_pub.publish(backup_cmd)
+        self.sign_state = self.sign_state*-1
+        # self.state_machine.get_logger().info(f'INITIAL CONTROL 1{backup_cmd.drive.steering_angle, backup_cmd.drive.speed}')
         time.sleep(1)
-        turn_cmd = AckermannDriveStamped()
-        turn_cmd.header.stamp = self.state_machine.get_clock().now().to_msg()
-        turn_cmd.drive.steering_angle = np.pi/6
-        turn_cmd.drive.speed = 1.0
-        self.drive_pub.publish(turn_cmd)
+
         self.stop_car()
 
 

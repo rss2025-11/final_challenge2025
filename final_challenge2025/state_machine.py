@@ -241,9 +241,9 @@ class StateMachine(Node):
             # sweep until we detect the banana
             else:
                 # TODO: NEED SWEEPING LOGIC
-                self.get_logger().info("Entering banana sweep")
+                # self.get_logger().info("Entering banana sweep")
                 self.controller.sweep_banana()
-                self.get_logger().info("Finished banana sweep")
+                # self.get_logger().info("Finished banana sweep")
 
 
         elif self.current_phase == Phase.BANANA_PARKING:
@@ -310,6 +310,7 @@ class StateMachine(Node):
         goals.append((SIGNAL_MAP_POSE, "signal"))
 
         # Sort goals by distance to current position
+        #Change to use path distances from start
         goals.sort(
             key=lambda x: (x[0].position.x - self.current_pose.position.x) ** 2
             + (x[0].position.y - self.current_pose.position.y) ** 2
