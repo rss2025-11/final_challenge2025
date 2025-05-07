@@ -85,6 +85,11 @@ class DetectorNode(Node):
             banana_pos_to_pub.position.y = relative_y #float(banana_box_base_y)
             banana_pos_to_pub.position.z = float(banana_img_conf)
 
+            banana_msg = Float32MultiArray()
+            banana_msg.data = [relative_x, relative_y]
+            self.banana_publisher.publish(banana_msg)
+
+
         traffic_state_to_pub = Bool()
         if traffic_light_img_pos is None:
              traffic_state_to_pub.data = False #"Go"
@@ -110,9 +115,9 @@ class DetectorNode(Node):
                 traffic_state_to_pub.data = True #"Stop"
 
         #publish data
-        banana_msg = Float32MultiArray()
-        banana_msg.data = [relative_x, relative_y]
-        self.banana_publisher.publish(banana_msg)
+        # banana_msg = Float32MultiArray()
+        # banana_msg.data = [relative_x, relative_y]
+        # self.banana_publisher.publish(banana_msg)
         self.traffic_light_publisher.publish(traffic_state_to_pub)
         debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
         self.debug_pub.publish(debug_msg)

@@ -48,7 +48,6 @@ class StateMachine(Node):
         self.shell_points_topic = self.get_parameter("shell_points_topic").get_parameter_value().string_value
         self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
         self.main_loop_rate = self.get_parameter("main_loop_rate").get_parameter_value().double_value
-
         # subscribers
         self.shell_points_subscriber = self.create_subscription(
             PoseArray,
@@ -81,6 +80,7 @@ class StateMachine(Node):
             Odometry, '/follow_path_phase_odom', 1
         )
         self.marker_pub = self.create_publisher(Marker, "/cone_marker", 1)
+        self.exit_pub = self.create_publisher(Bool, "/exit_follow", 1)
 
         # state vars
         self.goal_points = []  # Navigation waypoints
@@ -199,9 +199,6 @@ class StateMachine(Node):
                 self.current_phase = self.goal_phases[self.current_pointer]
                 self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
                 self.reached_end = False
-            else:
-                # Initiate pure pursuit
-                self.pure_pursuit_publisher.publish(self.current_location)
 
         elif self.current_phase == Phase.TRAFFIC_SIGNAL:
             if self.stop_signal is not None and not self.stop_signal:
@@ -232,10 +229,14 @@ class StateMachine(Node):
                 self.current_pointer += 1
                 self.current_phase = Phase.BANANA_PARKING
                 self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
+                exit_msg = Bool()
+                exit_msg.data = True
+                self.exit_pub.publish(exit_msg)
 
             # sweep until we detect the banana
             # else:
                 # TODO: NEED SWEEPING LOGIC
+
 
         elif self.current_phase == Phase.BANANA_PARKING:
             # Testing IRL 
