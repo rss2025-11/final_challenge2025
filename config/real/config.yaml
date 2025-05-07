@@ -6,7 +6,7 @@ state_machine:
     signal_detection_topic: "/detections/traffic_light"
     shell_points_topic: "/shell_points"
     main_loop_rate: 60.0
-    lookahead_distance: 0.5
+    lookahead_distance: 1.0
     path_request_topic: "/path_request"
     lookahead_point_topic: "/lookahead_point"
     planned_path_topic: "/planned_path"

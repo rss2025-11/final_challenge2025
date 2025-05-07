@@ -31,6 +31,7 @@ setup(
             'pure_pursuit = final_challenge2025.pure_pursuit:main',
             'basement_point_publisher = final_challenge2025.basement_point_publisher:main',
             'detector = final_challenge2025.model.detection_node:main',
+            'track_follower = final_challenge2025.track_path:main'
         ],
     },
 )

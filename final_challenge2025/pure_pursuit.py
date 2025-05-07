@@ -12,7 +12,7 @@ class PurePursuit(Node):
 
     def __init__(self):
         super().__init__("pure_pursuit")
-        self.declare_parameter("drive_topic", "/drive")
+        self.declare_parameter("drive_topic", "/vesc/high_level/input/nav_0")
 
         self.drive_topic = (
             self.get_parameter("drive_topic").get_parameter_value().string_value
@@ -37,7 +37,7 @@ class PurePursuit(Node):
         self.point_follow_pub = self.create_publisher(Marker, "/point_to_follow", 1)
 
         self.wheelbase_length = 0.33
-        self.speed = 2.0
+        self.speed = 1.0
 
         self.current_x = 0.0
         self.current_y = 0.0
@@ -66,7 +66,12 @@ class PurePursuit(Node):
         )
 
         drive_cmd.drive.speed = self.speed
-        drive_cmd.drive.steering_angle = angle
+        # drive_cmd.drive.steering_angle = angle - 0.035
+        # max_positive = np.pi/8
+        # max_negative = -np.pi/8
+        max_positive = np.pi/12
+        max_negative = -np.pi/12
+        drive_cmd.drive.steering_angle = max(min(angle - 0.035, max_positive), max_negative)          
         self.drive_pub.publish(drive_cmd)
 
     def viz_lookahead_point(self):

@@ -50,7 +50,7 @@ class Detector:
                 x1, y1, x2, y2 = xyxy.tolist()
                 # Map class index to class label using model/ results
                 label = results.names[int(cls_idx.item())]
-                predictions.append(((x1, y1, x2, y2), label))
+                predictions.append(((x1, y1, x2, y2), label, conf.item()))
         
         #convert original image to rgb
         original_image = results.orig_img
