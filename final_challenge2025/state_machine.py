@@ -123,30 +123,23 @@ class StateMachine(Node):
         """
         self.get_logger().info("Received shell points")
         
-        # usage in shell_points_callback
-        # self.goal_points = self.order_goals(shell_points)
-
         # Set up navigation points
-        self.goal_points = [
-            shell_points.poses[0],  # First banana region
-            None,  # Placeholder for first banana location (will be updated)
-            SIGNAL_MAP_POSE,  # Signal location
-            shell_points.poses[1],  # Second banana region
-            None,  # Placeholder for second banana location
-            SIGNAL_MAP_POSE,  # Signal location
-            self.current_pose,  # End location
-        ]
+        self.goal_points = []
+        self.goal_phases = []
+        for point in shell_points.poses:
+            if point.position.x == 0.0 and point.position.y == 0.0:
+                self.goal_points.append(SIGNAL_MAP_POSE)
+                self.goal_phases.append(Phase.TRAFFIC_SIGNAL)
+            else:
+                self.goal_points.append(point)
+                self.goal_phases.append(Phase.BANANA_DETECTION)
+                self.goal_points.append(None)
+                self.goal_phases.append(Phase.BANANA_COLLECTION)
 
-        # Set up phases for each point
-        self.goal_phases = [
-            Phase.BANANA_DETECTION,
-            Phase.BANANA_COLLECTION,
-            Phase.TRAFFIC_SIGNAL,
-            Phase.BANANA_DETECTION,
-            Phase.BANANA_COLLECTION,
-            Phase.TRAFFIC_SIGNAL,
-            Phase.IDLE,  # End
-        ]
+        self.goal_points.append(SIGNAL_MAP_POSE)
+        self.goal_phases.append(Phase.TRAFFIC_SIGNAL)
+        self.goal_points.append(self.current_pose)
+        self.goal_phases.append(Phase.IDLE)
 
         # Add debug info
         self.get_logger().info(f"Goal points length: {len(self.goal_points)}")
