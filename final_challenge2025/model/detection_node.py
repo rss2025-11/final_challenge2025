@@ -110,26 +110,42 @@ class DetectorNode(Node):
             # traffic_state_to_pub.data = traffic_light_checker(image, traffic_light_img_pos)
             cv.rectangle(image, (int(traffic_light_img_pos[0]),int(traffic_light_img_pos[1])), (int(traffic_light_img_pos[2]), int(traffic_light_img_pos[3])),(0,0,255), 3) #Gets traffic light
             
-            # check_red = True
-            # red_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
-            # if red_bb != ((0,0),(0,0)):
-            #     # #Outlines the Traffic light in image
-            #     # cv.rectangle(image, red_bb[0], red_bb[1],(0,0,255), 3) #Gets red on traffic light
-            #     traffic_state_to_pub.data = True #"Stop"    
-            # else:
-            #     traffic_state_to_pub.data = False #"Go"
-
-            check_red = False
-            green_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
-            if green_bb != ((0,0),(0,0)):
-                #Outlines the Traffic light in image
-                traffic_state_to_pub.data = False#"Go"    
-            else:
-                traffic_state_to_pub.data = True #"Stop"
-            
+            check_red = True
+            red_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
+            if red_bb != ((0,0),(0,0)) and abs(red_bb[0][0] - red_bb[1][0]) >= 10:
+                # #Outlines the Traffic light in image
+                # cv.rectangle(image, red_bb[0], red_bb[1],(0,0,255), 3) #Gets red on traffic light
+                traffic_state_to_pub.data = True #"Stop"   
+                            
                 self.traffic_light_publisher.publish(traffic_state_to_pub)
-                debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
-                self.debug_pub.publish(debug_msg)
+            else:
+                traffic_state_to_pub.data = False #"Go"
+
+            debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
+            self.debug_pub.publish(debug_msg) 
+            
+
+            # self.traffic_light_publisher.publish(traffic_state_to_pub)
+            # debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
+            # self.debug_pub.publish(debug_msg) 
+            # check_red = False
+            # green_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
+            # if green_bb:
+            #     #Outlines the Traffic light in image
+            #     traffic_state_to_pub.data = False#"Go"    
+                
+            #     self.traffic_light_publisher.publish(traffic_state_to_pub)
+            #     debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
+            #     self.debug_pub.publish(debug_msg)
+            #     self.get_logger().info(f"TR")
+
+            # else:
+
+            #     traffic_state_to_pub.data = True #"Stop"
+            
+            #     # self.traffic_light_publisher.publish(traffic_state_to_pub)
+            #     # debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
+            #     # self.debug_pub.publish(debug_msg)
 
 
         #publish data
@@ -201,8 +217,8 @@ class DetectorNode(Node):
         
 
         if check_red:
-            red_HSV_lower = np.array([0,0,217]) 
-            red_HSV_upper = np.array([4,255,255])
+            red_HSV_lower = np.array([105,0,217]) 
+            red_HSV_upper = np.array([115,255,256])
             bb = fc_TL_color_segmentation(traffic_light_img, (red_HSV_lower, red_HSV_upper))
         else:
             green_HSV_lower = np.array([20,0,230]) 
@@ -211,13 +227,15 @@ class DetectorNode(Node):
 
         hsv_img = cv.cvtColor(traffic_light_img, cv.COLOR_BGR2HSV)
 
-        # self.get_logger().info(f'HSV: {hsv_img[52,15]}')
+        # self.get_logger().info(f'HSV1: {hsv_img[5,12]}')
+        # self.get_logger().info(f'HSV2: {hsv_img[7,9]}')
+        # self.get_logger().info(f'HSV3: {hsv_img[13,12]}')
         # self.get_logger().info(f'HSV: {hsv_img[74,25]}')
         
-        cv.rectangle(traffic_light_img, bb[0], bb[1], (255,0,0))
-        debug_msg_1 = self.bridge.cv2_to_imgmsg(traffic_light_img, "rgb8")
-        self.tl_debug_pub.publish(debug_msg_1)
-
+        if bb:
+            cv.rectangle(traffic_light_img, bb[0], bb[1], (255,0,0))
+            debug_msg_1 = self.bridge.cv2_to_imgmsg(traffic_light_img, "rgb8")
+            self.tl_debug_pub.publish(debug_msg_1)
         return bb
 
     

@@ -280,8 +280,10 @@ class StateMachine(Node):
                     # self.detection gives [x,y] in robot frame
                     self.controller.banana_parking_phase(self.detection[0], self.detection[1])
                     self.prev_detection = self.detection
+                    # self.get_logger().info("IN BANANA PARKING PHASE 1")
                 elif self.prev_detection is not None:
                     self.controller.banana_parking_phase(self.prev_detection[0], self.prev_detection[1])
+                    # self.get_logger().info("IN BANANA PARKING PHASE 2")
 
 
                 # else: 
@@ -378,7 +380,7 @@ class StateMachine(Node):
         dy = self.current_pose.position.y - current_goal_point.position.y
         distance = (dx**2 + dy**2) ** 0.5
 
-        return distance < 1.0 # threshold
+        return distance < 0.5 #1.0 # threshold
 
     def check_parking_condition(self, threshold: float = 0.6):
         return self.parked
