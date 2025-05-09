@@ -145,10 +145,12 @@ class Controller:
         backup_cmd.drive.speed = 1.0 * self.sign_state
         self.drive_pub.publish(backup_cmd)
         self.sign_state = self.sign_state*-1
-        # self.state_machine.get_logger().info(f'INITIAL CONTROL 1{backup_cmd.drive.steering_angle, backup_cmd.drive.speed}')
         time.sleep(1)
 
+
         self.stop_car()
+        time.sleep(1)
+
 
 
     def stop_car(self):

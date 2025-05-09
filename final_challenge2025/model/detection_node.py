@@ -23,16 +23,21 @@ class DetectorNode(Node):
         self.subscriber = self.create_subscription(Bool, "/banana_save_img", self.recieve_save_rqst, 1)
         self.debug_pub = self.create_publisher(Image, "/debug_img", 10)
         self.tl_debug_pub = self.create_publisher(Image, "/tl_debug_img", 10)
+        self.off_detection_sub = self.create_subscription(Bool, "/process_image", self.process_image_callback, 1)
         self.bridge = CvBridge()
         self.threshold = 0.3
         self.homography = self.create_homography_matrix()
         self.banana_counter = 0
         self.save_rqsts = 0
-
+        self.on_processing = False
 
         self.get_logger().info("Detector Initialized")
 
+    def process_image_callback(self, msg):
+        self.on_processing = msg.data
     def callback(self, img_msg):
+        if not self.on_processing:
+            return
         # Process image with CV Bridge
         image = self.bridge.imgmsg_to_cv2(img_msg, "bgr8")
 
@@ -121,14 +126,19 @@ class DetectorNode(Node):
                 traffic_state_to_pub.data = False#"Go"    
             else:
                 traffic_state_to_pub.data = True #"Stop"
+            
+                self.traffic_light_publisher.publish(traffic_state_to_pub)
+                debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
+                self.debug_pub.publish(debug_msg)
+
 
         #publish data
         # banana_msg = Float32MultiArray()
         # banana_msg.data = [relative_x, relative_y]
         # self.banana_publisher.publish(banana_msg)
-        self.traffic_light_publisher.publish(traffic_state_to_pub)
-        debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
-        self.debug_pub.publish(debug_msg)
+        # self.traffic_light_publisher.publish(traffic_state_to_pub)
+        # debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
+        # self.debug_pub.publish(debug_msg)
 
 
     # TODO: Move homography matrix and transformaiton to its own separate file/utils for organization
@@ -158,6 +168,7 @@ class DetectorNode(Node):
         np_pts_image = np.float32(np_pts_image[:, np.newaxis, :])
         homography, err = cv.findHomography(np_pts_image, np_pts_ground)
         print("Homography Transformer Initialized")
+        self.get_logger().info(f'')
         return homography
 
     def transform_homography(self, homography, point):

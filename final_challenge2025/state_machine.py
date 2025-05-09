@@ -79,6 +79,9 @@ class StateMachine(Node):
         self.pure_pursuit_publisher = self.create_publisher(
             Odometry, '/follow_path_phase_odom', 1
         )
+        self.image_processing_publisher = self.create_publisher(
+            Bool, "/process_image", 1
+        )
         self.marker_pub = self.create_publisher(Marker, "/cone_marker", 1)
         self.exit_pub = self.create_publisher(Bool, "/exit_follow", 1)
 
@@ -96,6 +99,7 @@ class StateMachine(Node):
         self.reached_end = False
         self.parked = False
         self.previous_data = None
+        self.prev_detection = None
 
         # Timers
         self.main_loop_timer = self.create_timer(
@@ -204,17 +208,28 @@ class StateMachine(Node):
                 self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
                 self.reached_end = False
 
+                msg = Bool()
+                msg.data = True
+                self.image_processing_publisher.publish(msg)
+
         elif self.current_phase == Phase.TRAFFIC_SIGNAL:
             if self.stop_signal is not None and not self.stop_signal:
                 # Green light, continue
                 self.current_pointer += 1
                 self.current_phase = Phase.FOLLOWING_PATH
                 self.follow_path_phase()
+                
+                msg = Bool()
+                msg.data = False
+                self.image_processing_publisher.publish(msg)
+
             # Otherwise red light, wait
 
         elif self.current_phase == Phase.BANANA_DETECTION:
             # banana detected, begin parking towards it
-            if self.detection is not None:
+
+
+            if self.detection is not None and not (self.detection[0] == 0.0 and self.detection[1] == 0.0):
                 # TODO: Consider putting in orientation information for a more robust ending metric?
                 # banana_pose_rel = Pose()
                 # banana_pose_rel.position.x = self.detection[0]
@@ -238,6 +253,7 @@ class StateMachine(Node):
                 # self.exit_pub.publish(exit_msg)
                 self.controller.stop_car()
 
+
             # sweep until we detect the banana
             else:
                 # TODO: NEED SWEEPING LOGIC
@@ -258,12 +274,23 @@ class StateMachine(Node):
                 self.detection = None
 
             else:
-                # ensure detection is not No
-                if self.detection is not None:
+                # ensure detection is not empty
+                if self.detection is not None and not (self.detection[0] == 0.0 and self.detection[1] == 0.0):
+                # if self.detection is not None:
                     # self.detection gives [x,y] in robot frame
                     self.controller.banana_parking_phase(self.detection[0], self.detection[1])
+                    self.prev_detection = self.detection
+                elif self.prev_detection is not None:
+                    self.controller.banana_parking_phase(self.prev_detection[0], self.prev_detection[1])
+
+
+                # else: 
+                #     self.current_phase = Phase.BANANA_DETECTION
+                #     self.get_logger().info(f"Entering phase {self.current_phase}")
+                #     self.current_pointer -= 1
                 # self.detection = None
 
+            # self.detection = None
             # if not self.check_parking_condition() and self.detection is not None:
             #     self.controller.banana_parking_phase(self.detection[0], self.detection[1])
             #     self.detection = None
@@ -279,6 +306,11 @@ class StateMachine(Node):
             self.current_pointer += 1
             self.current_phase = Phase.FOLLOWING_PATH
             self.follow_path_phase()
+
+            msg = Bool()
+            msg.data = False
+            self.image_processing_publisher.publish(msg)
+
 
     def draw_marker(self, x, y):
         """
@@ -346,7 +378,7 @@ class StateMachine(Node):
         dy = self.current_pose.position.y - current_goal_point.position.y
         distance = (dx**2 + dy**2) ** 0.5
 
-        return distance < threshold
+        return distance < 1.0 # threshold
 
     def check_parking_condition(self, threshold: float = 0.6):
         return self.parked
