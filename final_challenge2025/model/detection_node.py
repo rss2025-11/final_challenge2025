@@ -105,7 +105,7 @@ class DetectorNode(Node):
 
         traffic_state_to_pub = Bool()
         if traffic_light_img_pos is None:
-             traffic_state_to_pub.data = False #"Go"
+            traffic_state_to_pub.data = False #"Go"
         else:
             # traffic_state_to_pub.data = traffic_light_checker(image, traffic_light_img_pos)
             cv.rectangle(image, (int(traffic_light_img_pos[0]),int(traffic_light_img_pos[1])), (int(traffic_light_img_pos[2]), int(traffic_light_img_pos[3])),(0,0,255), 3) #Gets traffic light
@@ -116,11 +116,10 @@ class DetectorNode(Node):
                 # #Outlines the Traffic light in image
                 # cv.rectangle(image, red_bb[0], red_bb[1],(0,0,255), 3) #Gets red on traffic light
                 traffic_state_to_pub.data = True #"Stop"   
-                            
-                self.traffic_light_publisher.publish(traffic_state_to_pub)
             else:
                 traffic_state_to_pub.data = False #"Go"
 
+            self.traffic_light_publisher.publish(traffic_state_to_pub)
             debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
             self.debug_pub.publish(debug_msg) 
             

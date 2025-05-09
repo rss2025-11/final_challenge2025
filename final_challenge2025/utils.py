@@ -4,8 +4,8 @@ import tf_transformations
 from geometry_msgs.msg import Pose
 
 SIGNAL_MAP_POSE = Pose()
-SIGNAL_MAP_POSE.position.x = -13.150381088256836
-SIGNAL_MAP_POSE.position.y = 13.826933860778809
+SIGNAL_MAP_POSE.position.x = -12.878
+SIGNAL_MAP_POSE.position.y = 15.240
 SIGNAL_MAP_POSE.position.z = 0.0
 SIGNAL_MAP_POSE.orientation.x = 0.0
 SIGNAL_MAP_POSE.orientation.y = 0.0

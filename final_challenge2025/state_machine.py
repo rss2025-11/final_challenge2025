@@ -17,10 +17,9 @@ from enum import Enum
 class Phase(Enum):
     IDLE = 0
     FOLLOWING_PATH = 1
-    TRAFFIC_SIGNAL = 2
-    BANANA_DETECTION = 3
-    BANANA_COLLECTION = 4
-    BANANA_PARKING = 5
+    BANANA_DETECTION = 2
+    BANANA_COLLECTION = 3
+    BANANA_PARKING = 4
 
 
 class StateMachine(Node):
@@ -30,7 +29,6 @@ class StateMachine(Node):
     This node manages the different phases of the challenge:
     - IDLE: Initialization and path planning
     - FOLLOWING_PATH: Following the planned path to the next point of interest
-    - TRAFFIC_SIGNAL: Detecting and responding to traffic signals
     - BANANA_DETECTION: Identifying and collecting the correct banana (shrink ray component)
     - BANANA_COLLECTION: Collecting the banana
     """
@@ -90,7 +88,6 @@ class StateMachine(Node):
         self.goal_phases = []  # Phase to execute at each point
         self.current_pointer = -1
         self.current_pose = None
-        self.current_location = None
         self.current_speed = 0.0
         self.current_phase = Phase.IDLE
         self.detection = None
@@ -100,6 +97,7 @@ class StateMachine(Node):
         self.parked = False
         self.previous_data = None
         self.prev_detection = None
+        self.detector_running = False
 
         # Timers
         self.main_loop_timer = self.create_timer(
@@ -134,10 +132,8 @@ class StateMachine(Node):
         self.goal_points = [
             shell_points.poses[0],  # First banana region
             None,  # Placeholder for first banana location (will be updated)
-            SIGNAL_MAP_POSE,  # Signal location
             shell_points.poses[1],  # Second banana region
             None,  # Placeholder for second banana location
-            SIGNAL_MAP_POSE,  # Signal location
             self.current_pose,  # End location
         ]
 
@@ -145,10 +141,8 @@ class StateMachine(Node):
         self.goal_phases = [
             Phase.BANANA_DETECTION,
             Phase.BANANA_COLLECTION,
-            Phase.TRAFFIC_SIGNAL,
             Phase.BANANA_DETECTION,
             Phase.BANANA_COLLECTION,
-            Phase.TRAFFIC_SIGNAL,
             Phase.IDLE,  # End
         ]
 
@@ -183,7 +177,36 @@ class StateMachine(Node):
             location (Odometry): Current odometry of the vehicle
         """
         self.current_pose = location.pose.pose  # Extract the Pose from PoseWithCovariance
-        self.current_location = location
+        if self.near_signal():
+            if self.detector_running == False:
+                msg = Bool()
+                msg.data = True
+                self.image_processing_publisher.publish(msg)
+                self.detector_running = msg.data
+
+            if self.stop_signal == True:
+                self.get_logger().info("STOPPING CAR")
+                # TODO: might cause jitter
+                self.controller.stop_car()
+        else:
+            if self.current_phase == Phase.FOLLOWING_PATH and self.detector_running == True:
+                msg = Bool()
+                msg.data = False
+                self.image_processing_publisher.publish(msg)
+                self.detector_running = msg.data
+
+    def near_signal(self, threshold: float = 2.0):
+        """
+        Check if the car is near the traffic signal.
+        """
+        if self.current_pose is None:
+            return False
+
+        dx = self.current_pose.position.x - SIGNAL_MAP_POSE.position.x
+        dy = self.current_pose.position.y - SIGNAL_MAP_POSE.position.y
+        distance = (dx**2 + dy**2) ** 0.5
+
+        return distance < threshold
 
     def main_loop(self):
         """Main control loop that runs at a fixed frequency."""
@@ -211,35 +234,13 @@ class StateMachine(Node):
                 msg = Bool()
                 msg.data = True
                 self.image_processing_publisher.publish(msg)
-
-        elif self.current_phase == Phase.TRAFFIC_SIGNAL:
-            if self.stop_signal is not None and not self.stop_signal:
-                # Green light, continue
-                self.current_pointer += 1
-                self.current_phase = Phase.FOLLOWING_PATH
-                self.follow_path_phase()
-                
-                msg = Bool()
-                msg.data = False
-                self.image_processing_publisher.publish(msg)
-
-            # Otherwise red light, wait
+                self.detector_running = msg.data
 
         elif self.current_phase == Phase.BANANA_DETECTION:
             # banana detected, begin parking towards it
 
 
             if self.detection is not None and not (self.detection[0] == 0.0 and self.detection[1] == 0.0):
-                # TODO: Consider putting in orientation information for a more robust ending metric?
-                # banana_pose_rel = Pose()
-                # banana_pose_rel.position.x = self.detection[0]
-                # banana_pose_rel.position.y = self.detection[1]
-                # banana_pose_rel.position.z = 0.0
-                # banana_pose_rel.orientation.x = 0.0
-                # banana_pose_rel.orientation.y = 0.0
-                # banana_pose_rel.orientation.z = 0.0
-                # banana_pose_rel.orientation.w = 0.0
-
                 banana_pose = robot_to_map_frame([self.detection[0], self.detection[1], 0.0], self.current_pose) 
                 self.goal_points[self.current_pointer + 1] = banana_pose
                 # self.detection = None
@@ -248,27 +249,19 @@ class StateMachine(Node):
                 self.current_pointer += 1
                 self.current_phase = Phase.BANANA_PARKING
                 self.get_logger().info(f"Reached goal, transitioning to {self.current_phase}")
-                # exit_msg = Bool()
-                # exit_msg.data = True
-                # self.exit_pub.publish(exit_msg)
+                exit_msg = Bool()
+                exit_msg.data = True
+                self.exit_pub.publish(exit_msg)
                 self.controller.stop_car()
-
 
             # sweep until we detect the banana
             else:
-                # TODO: NEED SWEEPING LOGIC
-                # self.get_logger().info("Entering banana sweep")
                 self.controller.sweep_banana()
-                # self.get_logger().info("Finished banana sweep")
 
 
         elif self.current_phase == Phase.BANANA_PARKING:
-            # Testing IRL 
-            # if self.detection is not None:
-            #     # self.detection gives [x,y] in robot frame
-            #     self.controller.banana_parking_phase(self.detection[0], self.detection[1])
 
-            if self.check_parking_condition():
+            if self.parked:
                 self.current_phase = Phase.BANANA_COLLECTION
                 self.get_logger().info(f"Entering phase {self.current_phase}")
                 self.detection = None
@@ -276,30 +269,11 @@ class StateMachine(Node):
             else:
                 # ensure detection is not empty
                 if self.detection is not None and not (self.detection[0] == 0.0 and self.detection[1] == 0.0):
-                # if self.detection is not None:
                     # self.detection gives [x,y] in robot frame
                     self.controller.banana_parking_phase(self.detection[0], self.detection[1])
                     self.prev_detection = self.detection
-                    # self.get_logger().info("IN BANANA PARKING PHASE 1")
                 elif self.prev_detection is not None:
                     self.controller.banana_parking_phase(self.prev_detection[0], self.prev_detection[1])
-                    # self.get_logger().info("IN BANANA PARKING PHASE 2")
-
-
-                # else: 
-                #     self.current_phase = Phase.BANANA_DETECTION
-                #     self.get_logger().info(f"Entering phase {self.current_phase}")
-                #     self.current_pointer -= 1
-                # self.detection = None
-
-            # self.detection = None
-            # if not self.check_parking_condition() and self.detection is not None:
-            #     self.controller.banana_parking_phase(self.detection[0], self.detection[1])
-            #     self.detection = None
-            # elif self.detection is not None:
-            #     # self.current_pointer += 1
-            #     self.current_phase = Phase.BANANA_COLLECTION
-            #     self.get_logger().info(f"Entering phase {self.current_phase}")
 
             
         elif self.current_phase == Phase.BANANA_COLLECTION:
@@ -312,6 +286,7 @@ class StateMachine(Node):
             msg = Bool()
             msg.data = False
             self.image_processing_publisher.publish(msg)
+            self.detector_running = msg.data
 
 
     def draw_marker(self, x, y):
@@ -381,20 +356,6 @@ class StateMachine(Node):
         distance = (dx**2 + dy**2) ** 0.5
 
         return distance < 0.5 #1.0 # threshold
-
-    def check_parking_condition(self, threshold: float = 0.6):
-        return self.parked
-        if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
-            return False
-
-        current_goal_point = self.goal_points[self.current_pointer]
-
-        # Calculate distance to goal (simple Euclidean distance for now)
-        dx = self.current_pose.position.x - current_goal_point.position.x
-        dy = self.current_pose.position.y - current_goal_point.position.y
-        distance = (dx**2 + dy**2) ** 0.5
-        self.get_logger().info(f"DISTANCE: {distance}")
-        return distance < 0.5 #threshold
 
     def follow_path_phase(self):
         """Follow a path to the current goal point."""
