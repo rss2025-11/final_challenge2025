@@ -195,7 +195,7 @@ class StateMachine(Node):
                 self.image_processing_publisher.publish(msg)
                 self.detector_running = msg.data
 
-    def near_signal(self, threshold: float = 2.0):
+    def near_signal(self, threshold: float = 20.0):
         """
         Check if the car is near the traffic signal.
         """

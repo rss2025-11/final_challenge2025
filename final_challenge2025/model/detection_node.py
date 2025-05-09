@@ -10,6 +10,7 @@ from std_msgs.msg import String, Bool, Float32MultiArray
 import cv2 as cv
 import numpy as np
 import os
+import time
 
 class DetectorNode(Node):
     def __init__(self):
@@ -28,6 +29,8 @@ class DetectorNode(Node):
         self.threshold = 0.3
         self.homography = self.create_homography_matrix()
         self.banana_counter = 0
+        self.tl_counter = 0
+        self.last_time_dtct = 0
         self.save_rqsts = 0
         self.on_processing = False
 
@@ -42,7 +45,8 @@ class DetectorNode(Node):
         image = self.bridge.imgmsg_to_cv2(img_msg, "bgr8")
 
         #Initialize detector
-        detector_model = Detector()
+        detector_model = Detector(from_tensor_rt=False) #Detector()
+        detector_model.to('cuda')
         detector_model.set_threshold(self.threshold)
 
         #Get predictions
@@ -106,13 +110,15 @@ class DetectorNode(Node):
         traffic_state_to_pub = Bool()
         if traffic_light_img_pos is None:
             traffic_state_to_pub.data = False #"Go"
+
+            self.traffic_light_publisher.publish(traffic_state_to_pub)
         else:
             # traffic_state_to_pub.data = traffic_light_checker(image, traffic_light_img_pos)
             cv.rectangle(image, (int(traffic_light_img_pos[0]),int(traffic_light_img_pos[1])), (int(traffic_light_img_pos[2]), int(traffic_light_img_pos[3])),(0,0,255), 3) #Gets traffic light
             
             check_red = True
             red_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
-            if red_bb != ((0,0),(0,0)) and abs(red_bb[0][0] - red_bb[1][0]) >= 10:
+            if red_bb != ((0,0),(0,0)) and abs(red_bb[0][0] - red_bb[1][0]) >= 5:
                 # #Outlines the Traffic light in image
                 # cv.rectangle(image, red_bb[0], red_bb[1],(0,0,255), 3) #Gets red on traffic light
                 traffic_state_to_pub.data = True #"Stop"   
@@ -208,6 +214,9 @@ class DetectorNode(Node):
         # Want to get the traffic light, Assuming that's where red is
         traffic_light_img = image[int(image_position[1]):int(image_position[3]), 
                                 int(image_position[0]): int(image_position[2])]
+        
+        # if self.tl_counter < 8:
+        #   self.save_img(traffic_light_img, False)
 
         # #Want to get top half of the traffic light, Assuming that's where red is
         # base_of_top_half = int((image_position[1] + image_position[3])/2)
@@ -216,8 +225,8 @@ class DetectorNode(Node):
         
 
         if check_red:
-            red_HSV_lower = np.array([105,0,217]) 
-            red_HSV_upper = np.array([115,255,256])
+            red_HSV_lower = np.array([100,0,217]) #(105,0,217)
+            red_HSV_upper = np.array([130,256,256]) #(115,256,256)
             bb = fc_TL_color_segmentation(traffic_light_img, (red_HSV_lower, red_HSV_upper))
         else:
             green_HSV_lower = np.array([20,0,230]) 
@@ -252,12 +261,21 @@ class DetectorNode(Node):
         if(msg.data):
             self.save_rqsts += 1
 
-    def save_img(self, img):
-        save_path = f"{os.path.dirname(__file__)}/banana_{self.banana_counter}.png"
-        # img.save(save_path)
-        # self.get_logger().info(f"Saved banana {self.banana_counter} to {save_path}!")
-        cv.imwrite(save_path, img)
-        self.banana_counter += 1
+    def save_img(self, img, banana=True):
+        cur_time = time.time()
+        if banana:
+            save_path = f"{os.path.dirname(__file__)}/banana_{self.banana_counter}.png"
+            # img.save(save_path)
+            # self.get_logger().info(f"Saved banana {self.banana_counter} to {save_path}!")
+            rgb_img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+            cv.imwrite(save_path, rgb_img)
+            self.banana_counter += 1
+        elif  cur_time - self.last_time_dtct > 1:
+            save_path = f"{os.path.dirname(__file__)}/TL_{self.tl_counter}.png"
+            hsv_img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+            cv.imwrite(save_path, hsv_img)
+            self.tl_counter += 1
+            self.last_time_dtct = cur_time
 
 def fc_TL_color_segmentation(img, template):
 	"""
