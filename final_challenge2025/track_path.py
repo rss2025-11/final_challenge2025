@@ -31,7 +31,7 @@ class TrackSegment(Node):
         self.bridge = CvBridge()
         self.homography = self.create_homography_matrix()
         self.inv_homography = np.linalg.inv(self.homography)
-        self.lookahead_dist = 2.0 # meters
+        self.lookahead_dist = 3.0 #2.0 # meters
         self.lookahead_pt_history = np.tile([self.lookahead_dist, 0.0], (10, 1))
 
     
@@ -98,13 +98,13 @@ class TrackSegment(Node):
                     self.lookahead_pixel.publish(lookahead_pix)
                     cv.circle(cdstP, (int(round(pixel_x)), int(round(pixel_y))), radius=5, color=(0, 255, 0), thickness=-1)
                     speed = Float32()
-                    speed.data = 2.0#2.5
+                    speed.data = 4.0#2.0#2.5
                     self.speed_pub.publish(speed)
                     lookahead_msg = Float32MultiArray()
                     lookahead_msg.data = weighted_lookahead.tolist()
                     self.lookahead_pub.publish(lookahead_msg)
-                debug_msg = self.bridge.cv2_to_imgmsg(cdstP, "bgr8")
-                self.debug_pub.publish(debug_msg)
+                # debug_msg = self.bridge.cv2_to_imgmsg(cdstP, "bgr8")
+                # self.debug_pub.publish(debug_msg)
         except Exception as e:
             # pass
             self.get_logger().info(f"Error in image_callback {e}")
@@ -260,9 +260,9 @@ class TrackSegment(Node):
         slope = (p2y - p1y) / (p2x - p1x)
         y_intercept = slope * (self.lookahead_dist - p1x) + p1y
         if is_left:
-            offset = -0.35
+            offset = -0.33
         else:
-            offset = 0.35
+            offset = 0.37
         lookahead_point = [self.lookahead_dist, y_intercept + offset]
         return lookahead_point
 

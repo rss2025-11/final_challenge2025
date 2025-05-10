@@ -22,35 +22,35 @@ class DetectorNode(Node):
         self.traffic_light_publisher = self.create_publisher(Bool, "/detections/traffic_light", 1)
         self.subscriber = self.create_subscription(Image, "/zed/zed_node/rgb/image_rect_color", self.callback, 1)
         self.subscriber = self.create_subscription(Bool, "/banana_save_img", self.recieve_save_rqst, 1)
-        self.debug_pub = self.create_publisher(Image, "/debug_img", 10)
-        self.tl_debug_pub = self.create_publisher(Image, "/tl_debug_img", 10)
+        # self.debug_pub = self.create_publisher(Image, "/debug_img", 10)
+        # self.tl_debug_pub = self.create_publisher(Image, "/tl_debug_img", 10)
         self.off_detection_sub = self.create_subscription(Bool, "/process_image", self.process_image_callback, 1)
         self.bridge = CvBridge()
         self.threshold = 0.3
         self.homography = self.create_homography_matrix()
         self.banana_counter = 0
-        self.tl_counter = 0
-        self.last_time_dtct = 0
+        # self.tl_counter = 0
+        # self.last_time_dtct = 0
         self.save_rqsts = 0
-        self.on_processing = False
+        self.on_processing = True
 
-        self.get_logger().info("Detector Initialized")
+        #Initialize detector
+        self.detector_model = Detector(from_tensor_rt=False) # Detector()
+        self.detector_model.to('cuda')
+        self.detector_model.set_threshold(self.threshold)
 
     def process_image_callback(self, msg):
         self.on_processing = msg.data
+        if self.on_processing:
+            self.get_logger().info("Detector Initialized")
     def callback(self, img_msg):
         if not self.on_processing:
             return
         # Process image with CV Bridge
         image = self.bridge.imgmsg_to_cv2(img_msg, "bgr8")
 
-        #Initialize detector
-        detector_model = Detector(from_tensor_rt=False) #Detector()
-        detector_model.to('cuda')
-        detector_model.set_threshold(self.threshold)
-
         #Get predictions
-        prediction_dict = detector_model.predict(image)
+        prediction_dict = self.detector_model.predict(image)
         predictions = prediction_dict["predictions"]
 
         #Assuming only one banana in frame at a time
@@ -69,6 +69,7 @@ class DetectorNode(Node):
                 elif not traffic_light_found:
                     traffic_light_found = True
                     traffic_light_img_pos = detection[0]
+                self.get_logger().info(f'Traffic light conf: {detection[2]}')
 
         #Check detected to publish
         banana_pos_to_pub = Pose()
@@ -114,7 +115,7 @@ class DetectorNode(Node):
             self.traffic_light_publisher.publish(traffic_state_to_pub)
         else:
             # traffic_state_to_pub.data = traffic_light_checker(image, traffic_light_img_pos)
-            cv.rectangle(image, (int(traffic_light_img_pos[0]),int(traffic_light_img_pos[1])), (int(traffic_light_img_pos[2]), int(traffic_light_img_pos[3])),(0,0,255), 3) #Gets traffic light
+            # cv.rectangle(image, (int(traffic_light_img_pos[0]),int(traffic_light_img_pos[1])), (int(traffic_light_img_pos[2]), int(traffic_light_img_pos[3])),(0,0,255), 3) #Gets traffic light
             
             check_red = True
             red_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
@@ -126,41 +127,9 @@ class DetectorNode(Node):
                 traffic_state_to_pub.data = False #"Go"
 
             self.traffic_light_publisher.publish(traffic_state_to_pub)
-            debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
-            self.debug_pub.publish(debug_msg) 
-            
-
-            # self.traffic_light_publisher.publish(traffic_state_to_pub)
             # debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
             # self.debug_pub.publish(debug_msg) 
-            # check_red = False
-            # green_bb = self.traffic_light_checker(image, traffic_light_img_pos, check_red)
-            # if green_bb:
-            #     #Outlines the Traffic light in image
-            #     traffic_state_to_pub.data = False#"Go"    
-                
-            #     self.traffic_light_publisher.publish(traffic_state_to_pub)
-            #     debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
-            #     self.debug_pub.publish(debug_msg)
-            #     self.get_logger().info(f"TR")
-
-            # else:
-
-            #     traffic_state_to_pub.data = True #"Stop"
             
-            #     # self.traffic_light_publisher.publish(traffic_state_to_pub)
-            #     # debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
-            #     # self.debug_pub.publish(debug_msg)
-
-
-        #publish data
-        # banana_msg = Float32MultiArray()
-        # banana_msg.data = [relative_x, relative_y]
-        # self.banana_publisher.publish(banana_msg)
-        # self.traffic_light_publisher.publish(traffic_state_to_pub)
-        # debug_msg = self.bridge.cv2_to_imgmsg(image, "rgb8")
-        # self.debug_pub.publish(debug_msg)
-
 
     # TODO: Move homography matrix and transformaiton to its own separate file/utils for organization
     def create_homography_matrix(self):
@@ -215,15 +184,6 @@ class DetectorNode(Node):
         traffic_light_img = image[int(image_position[1]):int(image_position[3]), 
                                 int(image_position[0]): int(image_position[2])]
         
-        # if self.tl_counter < 8:
-        #   self.save_img(traffic_light_img, False)
-
-        # #Want to get top half of the traffic light, Assuming that's where red is
-        # base_of_top_half = int((image_position[1] + image_position[3])/2)
-        # traffic_light_img = image[int(image_position[1]):base_of_top_half, 
-        #                 int(image_position[0]): int(image_position[2])]
-        
-
         if check_red:
             red_HSV_lower = np.array([100,0,217]) #(105,0,217)
             red_HSV_upper = np.array([130,256,256]) #(115,256,256)
@@ -233,30 +193,8 @@ class DetectorNode(Node):
             green_HSV_upper = np.array([40,256,256])
             bb = fc_TL_color_segmentation(traffic_light_img, (green_HSV_lower, green_HSV_upper))
 
-        hsv_img = cv.cvtColor(traffic_light_img, cv.COLOR_BGR2HSV)
-
-        # self.get_logger().info(f'HSV1: {hsv_img[5,12]}')
-        # self.get_logger().info(f'HSV2: {hsv_img[7,9]}')
-        # self.get_logger().info(f'HSV3: {hsv_img[13,12]}')
-        # self.get_logger().info(f'HSV: {hsv_img[74,25]}')
-        
-        if bb:
-            cv.rectangle(traffic_light_img, bb[0], bb[1], (255,0,0))
-            debug_msg_1 = self.bridge.cv2_to_imgmsg(traffic_light_img, "rgb8")
-            self.tl_debug_pub.publish(debug_msg_1)
         return bb
 
-    
-
-
-# def image_print(img):
-# 	"""
-# 	Helper function to print out images, for debugging. Pass them in as a list.
-# 	Press any key to continue.
-# 	"""
-# 	cv.imshow("image", img)
-# 	cv.waitKey(0)
-# 	cv.destroyAllWindows()
     def recieve_save_rqst(self, msg):
         if(msg.data):
             self.save_rqsts += 1
@@ -264,7 +202,7 @@ class DetectorNode(Node):
     def save_img(self, img, banana=True):
         cur_time = time.time()
         if banana:
-            save_path = f"{os.path.dirname(__file__)}/banana_{self.banana_counter}.png"
+            save_path = f"{os.path.dirname(__file__)}/bananarun_{self.banana_counter}.png"
             # img.save(save_path)
             # self.get_logger().info(f"Saved banana {self.banana_counter} to {save_path}!")
             rgb_img = cv.cvtColor(img, cv.COLOR_BGR2RGB)

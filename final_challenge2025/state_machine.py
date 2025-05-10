@@ -80,6 +80,10 @@ class StateMachine(Node):
         self.image_processing_publisher = self.create_publisher(
             Bool, "/process_image", 1
         )
+        self.exit_parking_publisher = self.create_publisher(
+            Bool, "/exit_parking", 1
+        )
+
         self.marker_pub = self.create_publisher(Marker, "/cone_marker", 1)
         self.exit_pub = self.create_publisher(Bool, "/exit_follow", 1)
 
@@ -109,6 +113,8 @@ class StateMachine(Node):
 
         self.get_logger().info("State Machine Initialized")
 
+    def reorder_points(self, positions):
+        return sorted(positions, key = lambda pos: (-pos.position.x, -pos.position.y))
     def reached_end_callback(self, reached_end_msg):
         self.reached_end = not (reached_end_msg.data == self.previous_data) # not (distance < 0.1)
         self.previous_data = reached_end_msg.data
@@ -126,13 +132,14 @@ class StateMachine(Node):
         self.get_logger().info("Received shell points")
         
         # usage in shell_points_callback
-        # self.goal_points = self.order_goals(shell_points)
+
+        ordered_goals = self.reorder_points(shell_points.poses)
 
         # Set up navigation points
         self.goal_points = [
-            shell_points.poses[0],  # First banana region
+            ordered_goals[0],
             None,  # Placeholder for first banana location (will be updated)
-            shell_points.poses[1],  # Second banana region
+            ordered_goals[1],
             None,  # Placeholder for second banana location
             self.current_pose,  # End location
         ]
@@ -159,6 +166,15 @@ class StateMachine(Node):
             detection (Float32MultiArray): Location of the banana [x, y] m in robot frame
         """
         self.detection = detection.data
+
+    def custom_round(self, val, nearest_mod):
+        """Custom round for more accurate path finding"""
+        dif = val%nearest_mod
+        return_val = val - dif
+        if dif >= nearest_mod/2:
+            return return_val
+        else :
+            return return_val + nearest_mod
 
     def signal_callback(self, signal: Bool):
         """
@@ -188,14 +204,8 @@ class StateMachine(Node):
                 self.get_logger().info("STOPPING CAR")
                 # TODO: might cause jitter
                 self.controller.stop_car()
-        else:
-            if self.current_phase == Phase.FOLLOWING_PATH and self.detector_running == True:
-                msg = Bool()
-                msg.data = False
-                self.image_processing_publisher.publish(msg)
-                self.detector_running = msg.data
 
-    def near_signal(self, threshold: float = 20.0):
+    def near_signal(self, threshold: float = 6.0):
         """
         Check if the car is near the traffic signal.
         """
@@ -221,6 +231,9 @@ class StateMachine(Node):
                 self.follow_path_phase()
 
         elif self.current_phase == Phase.FOLLOWING_PATH:
+            exit_bool = Bool()
+            exit_bool.data = True
+            self.exit_parking_publisher.publish(exit_bool)
             if self.check_goal_condition():                
                 # Then transition to next phase
                 self.current_phase = self.goal_phases[self.current_pointer]
@@ -239,7 +252,6 @@ class StateMachine(Node):
         elif self.current_phase == Phase.BANANA_DETECTION:
             # banana detected, begin parking towards it
 
-
             if self.detection is not None and not (self.detection[0] == 0.0 and self.detection[1] == 0.0):
                 banana_pose = robot_to_map_frame([self.detection[0], self.detection[1], 0.0], self.current_pose) 
                 self.goal_points[self.current_pointer + 1] = banana_pose
@@ -254,6 +266,10 @@ class StateMachine(Node):
                 self.exit_pub.publish(exit_msg)
                 self.controller.stop_car()
 
+                exit_bool = Bool()
+                exit_bool.data = False
+                self.exit_parking_publisher.publish(exit_bool)
+
             # sweep until we detect the banana
             else:
                 self.controller.sweep_banana()
@@ -261,19 +277,19 @@ class StateMachine(Node):
 
         elif self.current_phase == Phase.BANANA_PARKING:
 
-            if self.parked:
+            if True: #self.parked:
                 self.current_phase = Phase.BANANA_COLLECTION
                 self.get_logger().info(f"Entering phase {self.current_phase}")
                 self.detection = None
 
-            else:
-                # ensure detection is not empty
-                if self.detection is not None and not (self.detection[0] == 0.0 and self.detection[1] == 0.0):
-                    # self.detection gives [x,y] in robot frame
-                    self.controller.banana_parking_phase(self.detection[0], self.detection[1])
-                    self.prev_detection = self.detection
-                elif self.prev_detection is not None:
-                    self.controller.banana_parking_phase(self.prev_detection[0], self.prev_detection[1])
+            # else:
+            #     # ensure detection is not empty
+            #     if self.detection is not None and not (self.detection[0] == 0.0 and self.detection[1] == 0.0):
+            #         # self.detection gives [x,y] in robot frame
+            #         self.controller.banana_parking_phase(self.detection[0], self.detection[1])
+            #         self.prev_detection = self.detection
+            #     elif self.prev_detection is not None:
+            #         self.controller.banana_parking_phase(self.prev_detection[0], self.prev_detection[1])
 
             
         elif self.current_phase == Phase.BANANA_COLLECTION:
@@ -337,25 +353,18 @@ class StateMachine(Node):
 
     def check_goal_condition(self, threshold: float = 0.6):
         """Check if we've reached the current goal."""
-        # return self.reached_end
-
-        # dx = self.current_pose.position.x - self.reached_end[0]
-        # dy = self.current_pose.position.y - self.reached_end[1]
-        # distance = (dx**2 + dy**2) ** 0.5
-        
-        # return  distance < threshold
-
         if self.current_pointer < 0 or self.current_pointer >= len(self.goal_points):
             return False
 
+        val = .125
         current_goal_point = self.goal_points[self.current_pointer]
 
         # Calculate distance to goal (simple Euclidean distance for now)
-        dx = self.current_pose.position.x - current_goal_point.position.x
-        dy = self.current_pose.position.y - current_goal_point.position.y
+        dx = self.current_pose.position.x -  self.custom_round(current_goal_point.position.x, val) # current_goal_point.position.x
+        dy = self.current_pose.position.y -  self.custom_round(current_goal_point.position.y, val) #current_goal_point.position.y
         distance = (dx**2 + dy**2) ** 0.5
 
-        return distance < 0.5 #1.0 # threshold
+        return distance < 0.5 # threshold
 
     def follow_path_phase(self):
         """Follow a path to the current goal point."""
